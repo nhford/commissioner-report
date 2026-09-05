@@ -1,0 +1,8 @@
+pandas>=2.0
+numpy>=1.26
+scipy>=1.11
+espn-api>=0.45
+python-dotenv>=1.0
+requests>=2.31
+pillow>=10.0
+supabase>=2.0

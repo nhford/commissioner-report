@@ -1,0 +1,77 @@
+{
+  "league_id": "619156725",
+  "name": "Commissioner's Report",
+  "current_season": 2026,
+  "owners_by_year": {
+    "2022": {
+      "1": "Noah",
+      "2": "Dean",
+      "3": "Liam",
+      "4": "Sam",
+      "5": "Stephen",
+      "6": "Alex",
+      "7": "Raymond",
+      "8": "Andoni",
+      "9": "Kyler",
+      "10": "N/A",
+      "11": "N/A",
+      "12": "Ajay"
+    },
+    "2023": {
+      "1": "Noah",
+      "2": "Liam",
+      "3": "Gandhari",
+      "4": "Alex",
+      "5": "Ajay",
+      "6": "Stephen",
+      "7": "Rikhav",
+      "8": "Divi",
+      "9": "Dean",
+      "12": "Raymond",
+      "13": "Jack",
+      "14": "Sam"
+    },
+    "2024": {
+      "1": "Noah",
+      "2": "Liam",
+      "3": "Gandhari",
+      "4": "Alex",
+      "5": "Ajay",
+      "6": "Stephen",
+      "7": "Rikhav",
+      "8": "Divi",
+      "9": "Dean",
+      "12": "Raymond",
+      "13": "Keshav",
+      "14": "Sam"
+    },
+    "2025": {
+      "1": "Noah",
+      "2": "Liam",
+      "3": "Gandhari",
+      "4": "Alex",
+      "5": "Ajay",
+      "6": "Stephen",
+      "7": "Rikhav",
+      "8": "Divi",
+      "9": "Dean",
+      "12": "Raymond",
+      "13": "Keshav",
+      "14": "Sam"
+    },
+    "2026": {
+      "1": "Noah",
+      "2": "Liam",
+      "3": "Gandhari",
+      "4": "Alex",
+      "5": "Ajay",
+      "6": "Stephen",
+      "7": "Rikhav",
+      "8": "Divi",
+      "9": "Dean",
+      "12": "Raymond",
+      "13": "Keshav",
+      "14": "Sam"
+    }
+  }
+}

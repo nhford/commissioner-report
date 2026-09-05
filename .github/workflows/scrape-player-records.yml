@@ -1,0 +1,39 @@
+name: Scrape Player Records
+
+on:
+  schedule:
+    # Tuesday 12pm EST after MNF
+    - cron: "0 17 * 8-12,1 2"
+  workflow_dispatch:
+
+concurrency:
+  group: scrape-player-records
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      TZ: America/New_York
+      ESPN_S2: ${{ secrets.ESPN_S2 }}
+      ESPN_SWID: ${{ secrets.ESPN_SWID }}
+      ESPN_LEAGUE_ID: ${{ vars.ESPN_LEAGUE_ID }}
+      ESPN_SEASON_ID: ${{ vars.ESPN_SEASON_ID }}
+      SUPABASE_URL: https://jdfdpbgqiigkjatzudle.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+      VERCEL_REVALIDATE_URL: ${{ vars.VERCEL_REVALIDATE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Run player records
+        run: python scrapers/player_records.py

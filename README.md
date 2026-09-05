@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Commissioner’s Report
 
-## Getting Started
+Unified front-end for this league’s coding projects. v1 includes **Median Monday** and **Player Records**.
 
-First, run the development server:
+Numbers live in Supabase Postgres. Team logos live in a public `logos` bucket. The Next.js site is read-only and statically cached; scrapers refresh the cache after they write.
+
+Project URL: `https://jdfdpbgqiigkjatzudle.supabase.co`
+
+## Local site
 
 ```bash
+cp .env.example .env
+# fill NEXT_PUBLIC_SUPABASE_ANON_KEY (and ESPN cookies if you will scrape)
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## One-time Supabase setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Run the files in [`supabase/migrations/`](supabase/migrations/) in the Supabase SQL editor (start with `20260830200000_init.sql`).
+2. Add `SUPABASE_SERVICE_ROLE_KEY` to `.env`.
+3. Seed the first Median Monday pull and NFL logos:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r scrapers/requirements.txt
+python scrapers/seed_median.py
+python scrapers/seed_nfl_logos.py
+```
 
-## Learn More
+4. Backfill player records (required once; the old JSON seed is incomplete):
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+python scrapers/player_records.py --full
+python scrapers/fantasy_logos.py
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Scrapers
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+python scrapers/median_monday.py
+python scrapers/player_records.py
+python scrapers/fantasy_logos.py
+```
 
-## Deploy on Vercel
+Median Monday **inserts** a new dated pull each run (history is kept). Player records increment from the table.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Schedules
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Job | Cadence | Writes |
+| --- | --- | --- |
+| Median Monday | Daily Wed–Mon 8pm ET, plus Sun/Thu 11:30pm ET | `median_pulls`, `median_standings`, `fantasy_logos`, `logos/fantasy/` |
+| Player records | Tuesday 12pm ET | `player_records` |
+| Fantasy logos | Manual (`workflow_dispatch` or `python scrapers/fantasy_logos.py`) | `fantasy_logos`, `logos/fantasy/{season}/{team_id}`, `logos/fantasy/catalog.json` |
+
+GitHub / Vercel secrets: `ESPN_S2`, `ESPN_SWID`, `SUPABASE_SERVICE_ROLE_KEY`, `REVALIDATE_SECRET`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Optional variables: `ESPN_LEAGUE_ID`, `ESPN_SEASON_ID`, `VERCEL_REVALIDATE_URL`.
+
+## Adding a third project
+
+1. Add a table (and RLS select-for-anon) in `supabase/migrations/`.
+2. Write a scraper that upserts via `scrapers/supabase_client.py`.
+3. Fetch in `lib/data.ts` and add a page + `lib/nav.ts` row.
+4. Add a GitHub Action cron and include the path in `app/api/revalidate/route.ts`.
