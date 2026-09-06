@@ -8,7 +8,6 @@ import {
   type ChordSubgroup,
 } from "d3-chord";
 import { arc as d3Arc } from "d3-shape";
-import { ownerColor } from "@/lib/trades";
 
 type Hover =
   | { kind: "group"; index: number }
@@ -23,6 +22,15 @@ type Props = {
 function truncateName(name: string, max = 12) {
   if (name.length <= max) return name;
   return `${name.slice(0, max - 1)}…`;
+}
+
+function ownerGray(index: number, count: number) {
+  if (count <= 1) return "#b3b3b3";
+  const t = index / (count - 1);
+  const lightness = 0.32 + t * 0.58;
+  const v = Math.round(lightness * 255);
+  const hex = v.toString(16).padStart(2, "0");
+  return `#${hex}${hex}${hex}`;
 }
 
 function ribbonPath(source: ChordSubgroup, target: ChordSubgroup, radius: number) {
@@ -47,7 +55,7 @@ export default function TradeChord({ owners, matrix }: Props) {
   }, []);
 
   const size = Math.min(width, 720);
-  const pad = size < 400 ? 56 : 80;
+  const pad = size < 400 ? 64 : 92;
   const outerRadius = Math.max(40, size / 2 - pad);
   const innerRadius = outerRadius * 0.92;
 
@@ -80,7 +88,7 @@ export default function TradeChord({ owners, matrix }: Props) {
 
   if (!owners.length) {
     return (
-      <p className="px-4 py-10 text-center text-sm text-neutral-600">
+      <p className="px-4 py-10 text-center text-sm text-white/60">
         No completed trades in this view.
       </p>
     );
@@ -113,10 +121,10 @@ export default function TradeChord({ owners, matrix }: Props) {
               <path
                 key={`ribbon-${source}-${target}`}
                 d={d}
-                fill={ownerColor(owners[source])}
-                fillOpacity={active ? 0.72 : 0.08}
-                stroke={ownerColor(owners[source])}
-                strokeOpacity={active ? 0.35 : 0.05}
+                fill={ownerGray(source, owners.length)}
+                fillOpacity={active ? 0.78 : 0.1}
+                stroke={ownerGray(source, owners.length)}
+                strokeOpacity={active ? 0.45 : 0.06}
                 className="cursor-pointer transition-opacity"
                 onMouseEnter={() => setHover({ kind: "ribbon", source, target })}
                 onMouseLeave={() => setHover(null)}
@@ -141,8 +149,8 @@ export default function TradeChord({ owners, matrix }: Props) {
               <g key={`group-${group.index}`}>
                 <path
                   d={d}
-                  fill={ownerColor(owners[group.index])}
-                  fillOpacity={active ? 1 : 0.25}
+                  fill={ownerGray(group.index, owners.length)}
+                  fillOpacity={active ? 1 : 0.28}
                   className="cursor-pointer"
                   onMouseEnter={() => setHover({ kind: "group", index: group.index })}
                   onMouseLeave={() => setHover(null)}
@@ -153,8 +161,8 @@ export default function TradeChord({ owners, matrix }: Props) {
                   dy="0.35em"
                   textAnchor={flip ? "end" : "start"}
                   transform={`rotate(${flip ? degrees + 180 : degrees} ${x} ${y})`}
-                  className="fill-neutral-800"
-                  style={{ fontSize: size < 400 ? 10 : 12 }}
+                  className="fill-white"
+                  style={{ fontSize: size < 400 ? 13 : 16 }}
                   opacity={active ? 1 : 0.35}
                   onMouseEnter={() => setHover({ kind: "group", index: group.index })}
                   onMouseLeave={() => setHover(null)}
@@ -167,7 +175,7 @@ export default function TradeChord({ owners, matrix }: Props) {
         </g>
       </svg>
       {tooltip ? (
-        <p className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded bg-neutral-900 px-3 py-1 text-xs font-medium text-white shadow">
+        <p className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded bg-white px-3 py-1 text-xs font-medium text-black shadow">
           {tooltip}
         </p>
       ) : null}

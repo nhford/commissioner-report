@@ -42,9 +42,11 @@ python scrapers/fantasy_logos.py
 python scrapers/median_monday.py
 python scrapers/player_records.py
 python scrapers/fantasy_logos.py
+python scrapers/player_projections.py
+python scrapers/recent_activity.py
 ```
 
-Median Monday **inserts** a new dated pull each run (history is kept). Player records increment from the table.
+Median Monday **inserts** a new dated pull each run (history is kept). Player records increment from the table. Daily projections insert a new snapshot; Recent Activity upserts the current-season feed.
 
 ## Schedules
 
@@ -52,6 +54,7 @@ Median Monday **inserts** a new dated pull each run (history is kept). Player re
 | --- | --- | --- |
 | Median Monday | Daily Wed–Mon 8pm ET, plus Sun/Thu 11:30pm ET | `median_pulls`, `median_standings`, `fantasy_logos`, `logos/fantasy/` |
 | Player records | Tuesday 12pm ET | `player_records` |
+| Daily archives | Daily 12pm ET | `player_projection_pulls`, `player_projections`, `league_activity` |
 | Fantasy logos | Manual (`workflow_dispatch` or `python scrapers/fantasy_logos.py`) | `fantasy_logos`, `logos/fantasy/{season}/{team_id}`, `logos/fantasy/catalog.json` |
 
 GitHub / Vercel secrets: `ESPN_S2`, `ESPN_SWID`, `SUPABASE_SERVICE_ROLE_KEY`, `REVALIDATE_SECRET`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Optional variables: `ESPN_LEAGUE_ID`, `ESPN_SEASON_ID`, `VERCEL_REVALIDATE_URL`.

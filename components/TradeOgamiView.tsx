@@ -85,9 +85,7 @@ export default function TradeOgamiView({ trades }: { trades: TradeRow[] }) {
           ? `${pairs.reduce((sum, pair) => sum + pair.count, 0)} pair-counts across ${owners.length} owners.`
           : "No qualifying trades in this view."}
       </p>
-      <div className="rounded-lg bg-white text-black">
-        <TradeChord owners={owners} matrix={matrix} />
-      </div>
+      <TradeChord owners={owners} matrix={matrix} />
       {pairs.length ? (
         <ReportTable
           caption="Completed trades between owner pairs"
