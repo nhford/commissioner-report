@@ -1,4 +1,4 @@
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { NextResponse } from "next/server";
 
 const PATHS = ["/", "/median-monday", "/player-records", "/trade-o-gami"];
@@ -12,6 +12,7 @@ export async function POST(request: Request) {
   for (const path of PATHS) {
     revalidatePath(path);
   }
+  revalidateTag("logos", "max");
 
   return NextResponse.json({ ok: true, paths: PATHS });
 }

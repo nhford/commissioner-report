@@ -2,12 +2,19 @@ const SUPABASE_URL =
   process.env.NEXT_PUBLIC_SUPABASE_URL ??
   "https://jdfdpbgqiigkjatzudle.supabase.co";
 
-export function logoPublicUrl(path: string | null | undefined) {
+/** Direct Storage URL. Use for server fetches, not `<img>` tags. */
+export function logoStorageUrl(path: string | null | undefined) {
   if (!path) return null;
   return `${SUPABASE_URL}/storage/v1/object/public/logos/${path}`;
 }
 
-export const PLAYER_SEASONS_URL = logoPublicUrl("player-records/seasons.json");
+/** Same-origin URL with long browser cache headers. */
+export function logoPublicUrl(path: string | null | undefined) {
+  if (!path) return null;
+  return `/logos/${path}`;
+}
+
+export const PLAYER_SEASONS_URL = logoStorageUrl("player-records/seasons.json");
 
 const ESPN_TO_PFR: Record<string, string> = {
   NE: "nwe",

@@ -34,7 +34,11 @@ def get_service_client() -> Client:
 
 def upload_logo(client: Client, path: str, data: bytes, content_type: str) -> None:
     bucket = client.storage.from_("logos")
-    options = {"content-type": content_type, "upsert": "true"}
+    options = {
+        "content-type": content_type,
+        "upsert": "true",
+        "cache-control": "2592000",
+    }
     try:
         bucket.upload(path, data, options)
     except Exception:

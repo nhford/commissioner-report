@@ -2,8 +2,8 @@
 """Player win-loss records from ESPN box scores. Writes to Supabase.
 
 Regular season (matchup NONE) and winners-bracket playoffs are stored separately.
-Consolation games do not count toward either record. Use --full to recompute
-from FIRST_SEASON through the current season.
+Consolation games do not count toward records, year-by-year starts, or average
+starter points. Use --full to recompute from FIRST_SEASON through the current season.
 """
 
 from __future__ import annotations
@@ -102,12 +102,21 @@ def fantasy_team_name(side) -> str:
     return ""
 
 
+def counts_toward_record(kind: str, home_id: int | None, away_id: int | None) -> bool:
+    return (
+        home_id is not None
+        and away_id is not None
+        and (kind == WINNERS_BRACKET or kind in REGULAR_TYPES)
+    )
+
+
 def record_appearance(
     players: dict[str, dict],
     player,
     year: int,
     owner: str,
     team_name: str,
+    count_start: bool,
 ) -> None:
     rec = remember_player(players, player)
     seasons = rec.setdefault("seasons", {})
@@ -122,7 +131,7 @@ def record_appearance(
     nfl = player.proTeam
     if nfl and nfl != "None" and (not acc["nfl"] or acc["nfl"][-1] != nfl):
         acc["nfl"].append(nfl)
-    if player.lineupSlot not in ("IR", "BE"):
+    if count_start and player.lineupSlot not in ("IR", "BE"):
         acc["gs"] += 1
         acc["starter_pts"] += float(getattr(player, "points", 0) or 0)
 
@@ -243,11 +252,12 @@ def scrape_weeks(
             away_owner = owner_name(year, away_id)
             home_name = fantasy_team_name(box.home_team)
             away_name = fantasy_team_name(box.away_team)
+            count_start = counts_toward_record(kind, home_id, away_id)
             for player in box.home_lineup:
-                record_appearance(players, player, year, home_owner, home_name)
+                record_appearance(players, player, year, home_owner, home_name, count_start)
             for player in box.away_lineup:
-                record_appearance(players, player, year, away_owner, away_name)
-            if home_id is None or away_id is None:
+                record_appearance(players, player, year, away_owner, away_name, count_start)
+            if not count_start:
                 continue
             if kind == WINNERS_BRACKET:
                 home_out, away_out = box_outcomes(box)
