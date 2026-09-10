@@ -18,11 +18,13 @@ const SECTIONS: Section[] = [
     href: "/player-records",
     label: "Player Records",
     blurb: "Career win-loss for every player rostered in this league.",
+    soon: true,
   },
   {
     href: "/trade-o-gami",
     label: "Trade-o-gami",
     blurb: "Who trades with whom: a chord of completed deals between owners.",
+    soon: true,
   },
   {
     href: "/lineup-efficiency",
