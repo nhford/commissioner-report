@@ -12,21 +12,32 @@ export function formatRecord(wins: number, games: number) {
   return `${wins}–${Math.max(0, games - wins)}`;
 }
 
-export function formatPullLabel(week: number, pulledAt: string) {
+export function formatPullLabel(
+  week: number,
+  pulledAt: string,
+  season?: number,
+  currentSeason?: number,
+) {
   const date = new Date(pulledAt);
-  if (Number.isNaN(date.getTime())) return `Week ${week}`;
-  const weekday = date.toLocaleDateString("en-US", { weekday: "short" });
-  const month = date.toLocaleDateString("en-US", { month: "short" });
-  const day = date.getDate();
-  const time = date
-    .toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    })
-    .replace(" ", "")
-    .toLowerCase();
-  return `Week ${week} · ${weekday} ${month} ${day} ${time}`;
+  let label = `Week ${week}`;
+  if (!Number.isNaN(date.getTime())) {
+    const weekday = date.toLocaleDateString("en-US", { weekday: "short" });
+    const month = date.toLocaleDateString("en-US", { month: "short" });
+    const day = date.getDate();
+    const time = date
+      .toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      })
+      .replace(" ", "")
+      .toLowerCase();
+    label = `Week ${week} · ${weekday} ${month} ${day} ${time}`;
+  }
+  if (season != null && currentSeason != null && season !== currentSeason) {
+    return `${label} (${season})`;
+  }
+  return label;
 }
 
 export function formatUpdated(iso: string | null | undefined) {

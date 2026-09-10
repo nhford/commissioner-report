@@ -31,7 +31,18 @@ export default async function MedianMondayPage() {
           ? `. Last updated ${formatUpdated(report.last_updated)}.`
           : "."}
       </p>
-      <p className="mt-3 max-w-2xl text-sm text-white/70">
+      <details className="mt-3 max-w-2xl md:hidden">
+        <summary className="min-h-11 cursor-pointer text-sm text-white/70 underline decoration-white/40 underline-offset-2">
+          How Median Monday works
+        </summary>
+        <p className="mt-2 text-sm text-white/70">
+          Each week a team can beat its opponent and also earn a bonus win for
+          finishing in the top half of the league. These percentages are a Monte
+          Carlo of remaining starter projections. Choose any snapshot to see
+          that pull.
+        </p>
+      </details>
+      <p className="mt-3 hidden max-w-2xl text-sm text-white/70 md:block">
         Each week a team can beat its opponent and also earn a bonus win for
         finishing in the top half of the league. These percentages are a Monte
         Carlo of remaining starter projections. Choose any pull to see that

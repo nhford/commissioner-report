@@ -118,7 +118,7 @@ export default function SiteChrome({ week, season, children }: Props) {
             aria-label="Sections"
           >
             <div className="flex items-center gap-1">
-              {NAV_ITEMS.map((item) => (
+              {NAV_ITEMS.filter((item) => !item.soon).map((item) => (
                 <NavLink
                   key={item.label}
                   {...item}
