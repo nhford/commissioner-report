@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import SiteChrome from "@/components/SiteChrome";
 import { getReport } from "@/lib/data";
 import "./globals.css";
@@ -36,6 +37,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         >
           {children}
         </SiteChrome>
+        <Analytics />
       </body>
     </html>
   );
