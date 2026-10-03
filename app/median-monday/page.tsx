@@ -6,7 +6,7 @@ import { formatUpdated } from "@/lib/format";
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
-  title: "Median Monday · Commissioner's Report",
+  title: "Median Watch · Commissioner's Report",
   description:
     "Estimated chance each team finishes above the league median this week.",
 };
@@ -20,7 +20,7 @@ export default async function MedianMondayPage() {
 
   return (
     <div>
-      <h1 className="text-2xl md:text-3xl font-bold">Median Monday</h1>
+      <h1 className="text-2xl md:text-3xl font-bold">Median Watch</h1>
       <p className="mt-2 text-sm text-white/65">
         {latest
           ? `Week ${latest.week}${latest.season ? ` · ${latest.season}` : ""}`
@@ -33,7 +33,7 @@ export default async function MedianMondayPage() {
       </p>
       <details className="mt-3 max-w-2xl md:hidden">
         <summary className="min-h-11 cursor-pointer text-sm text-white/70 underline decoration-white/40 underline-offset-2">
-          How Median Monday works
+          How Median Watch works
         </summary>
         <p className="mt-2 text-sm text-white/70">
           Each week a team can beat its opponent and also earn a bonus win for

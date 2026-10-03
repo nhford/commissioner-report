@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Insert the committed Median Monday JSON as the first dated pull if none exist."""
+"""Insert the committed Median Watch JSON as the first dated pull if none exist."""
 
 from __future__ import annotations
 

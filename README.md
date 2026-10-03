@@ -1,6 +1,6 @@
 # Commissioner’s Report
 
-Unified front-end for this league’s coding projects. v1 includes **Median Monday** and **Player Records**.
+Unified front-end for this league’s coding projects. v1 includes **Median Watch** and **Player Records**.
 
 Numbers live in Supabase Postgres. Team logos live in a public `logos` bucket. The Next.js site is read-only and statically cached; scrapers refresh the cache after they write.
 
@@ -19,7 +19,7 @@ npm run dev
 
 1. Run the files in [`supabase/migrations/`](supabase/migrations/) in the Supabase SQL editor (start with `20260830200000_init.sql`).
 2. Add `SUPABASE_SERVICE_ROLE_KEY` to `.env`.
-3. Seed the first Median Monday pull and NFL logos:
+3. Seed the first Median Watch pull and NFL logos:
 
 ```bash
 python -m venv .venv
@@ -46,13 +46,13 @@ python scrapers/player_projections.py
 python scrapers/recent_activity.py
 ```
 
-Median Monday **inserts** a new dated pull each run (history is kept). Player records increment from the table. Daily projections insert a new snapshot; Recent Activity upserts the current-season feed.
+Median Watch **inserts** a new dated pull each run (history is kept). Player records increment from the table. Daily projections insert a new snapshot; Recent Activity upserts the current-season feed.
 
 ## Schedules
 
 | Job | Cadence | Writes |
 | --- | --- | --- |
-| Median Monday | Daily Wed–Mon 8pm ET, plus Sun/Thu 11:30pm ET | `median_pulls`, `median_standings`, `fantasy_logos`, `logos/fantasy/` |
+| Median Watch | Daily Wed–Mon 8pm ET, plus Sun/Thu 11:30pm ET | `median_pulls`, `median_standings`, `fantasy_logos`, `logos/fantasy/` |
 | Player records | Tuesday 12pm ET | `player_records` |
 | Daily archives | Daily 12pm ET | `player_projection_pulls`, `player_projections`, `league_activity` |
 | Fantasy logos | Manual (`workflow_dispatch` or `python scrapers/fantasy_logos.py`) | `fantasy_logos`, `logos/fantasy/{season}/{team_id}`, `logos/fantasy/catalog.json` |

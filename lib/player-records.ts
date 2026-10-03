@@ -61,10 +61,11 @@ export const DEFAULT_MIN_STARTS = 17;
 export const SPECIAL_MIN_STARTS = {
   undefeated: 3,
   winless: 3,
+  even: 3,
 } as const;
 export const POSITION_ORDER = ["QB", "RB", "WR", "TE", "K", "D/ST"] as const;
 
-export type SpecialRecordFilter = "undefeated" | "winless" | null;
+export type SpecialRecordFilter = "undefeated" | "winless" | "even" | null;
 
 export function starterWinPct(player: PlayerRecord) {
   return player.gs > 0 ? player.ws / player.gs : 0;
@@ -105,6 +106,7 @@ export function filterPlayers(
     if (needle && !player.name.toLowerCase().includes(needle)) return false;
     if (special === "undefeated" && player.ws !== player.gs) return false;
     if (special === "winless" && player.ws !== 0) return false;
+    if (special === "even" && player.ws * 2 !== player.gs) return false;
     return true;
   });
 }

@@ -14,6 +14,20 @@ export const metadata: Metadata = {
   title: "Commissioner's Report",
   description:
     "League reports for median standings, player win-loss records, and more.",
+  icons: {
+    icon: [
+      {
+        url: "/favicon-light.png",
+        type: "image/png",
+        media: "(prefers-color-scheme: light)",
+      },
+      {
+        url: "/favicon-dark.png",
+        type: "image/png",
+        media: "(prefers-color-scheme: dark)",
+      },
+    ],
+  },
 };
 
 export const viewport = {

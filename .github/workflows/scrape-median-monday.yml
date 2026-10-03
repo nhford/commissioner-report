@@ -1,4 +1,4 @@
-name: Scrape Median Monday
+name: Scrape Median Watch
 
 on:
   schedule:
@@ -36,5 +36,5 @@ jobs:
       - name: Install dependencies
         run: pip install -r scrapers/requirements.txt
 
-      - name: Run Median Monday
+      - name: Run Median Watch
         run: python scrapers/median_monday.py

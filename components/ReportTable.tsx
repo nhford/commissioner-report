@@ -10,6 +10,7 @@ export type Column<T> = {
   natural: SortDir;
   align?: "left" | "center";
   numeric?: boolean;
+  className?: string;
   render: (row: T) => ReactNode;
   sortValue: (row: T) => string | number;
 };
@@ -22,6 +23,7 @@ type Props<T> = {
   rowClassName?: (row: T) => string;
   defaultSort: { key: string; dir: SortDir };
   tableClassName?: string;
+  layout?: "fixed" | "auto";
   renderExpanded?: (row: T) => ReactNode;
 };
 
@@ -38,6 +40,7 @@ export default function ReportTable<T>({
   rowClassName,
   defaultSort,
   tableClassName,
+  layout = "fixed",
   renderExpanded,
 }: Props<T>) {
   const [sorted, setSorted] = useState(defaultSort);
@@ -59,7 +62,11 @@ export default function ReportTable<T>({
   return (
     <div className="w-full overflow-x-auto">
       <table
-        className={`w-full min-w-[32rem] table-fixed text-left bg-white text-black rounded-lg ${tableClassName ?? ""}`}
+        className={`${
+          layout === "auto"
+            ? "w-max min-w-full table-auto"
+            : "w-full min-w-[32rem] table-fixed"
+        } text-left bg-white text-black rounded-lg ${tableClassName ?? ""}`}
       >
         <caption className="sr-only">{caption}</caption>
         <thead>
@@ -76,9 +83,9 @@ export default function ReportTable<T>({
                   key={col.key}
                   scope="col"
                   aria-sort={ariaSort}
-                  className={`px-2 py-3 whitespace-nowrap ${
+                  className={`px-1.5 py-2 md:px-2 md:py-3 md:whitespace-nowrap ${
                     col.align === "left" ? "text-left" : "text-center"
-                  } ${active ? "bg-neutral-200" : ""}`}
+                  } ${active ? "bg-neutral-200" : ""} ${col.className ?? ""}`}
                 >
                   <button
                     type="button"
@@ -136,11 +143,11 @@ export default function ReportTable<T>({
                   {columns.map((col) => (
                     <td
                       key={col.key}
-                      className={`px-2 py-3 ${
+                      className={`px-1.5 py-2 md:px-2 md:py-3 ${
                         col.align === "left" ? "text-left" : "text-center"
                       } ${col.numeric ? "tabular-nums" : ""} ${
                         sorted.key === col.key ? "bg-neutral-200/70" : ""
-                      }`}
+                      } ${col.className ?? ""}`}
                     >
                       {col.render(row)}
                     </td>

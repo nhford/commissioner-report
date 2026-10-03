@@ -108,9 +108,12 @@ export default function SiteChrome({ week, season, children }: Props) {
       <header className="md:hidden sticky top-0 z-20 border-b border-white/15 bg-neutral-800">
         <div className="flex items-center gap-3 px-3 py-3">
           <Link href="/" className="shrink-0">
-            <p className="text-base font-bold leading-tight">
-              Commissioner&apos;s Report
-            </p>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/favicon-dark.png"
+              alt="Commissioner's Report"
+              className="h-9 w-9 object-contain"
+            />
             <p className="text-[0.65rem] text-white/50">{issue}</p>
           </Link>
           <nav

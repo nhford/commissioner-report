@@ -11,14 +11,13 @@ type Section = NavItem & {
 const SECTIONS: Section[] = [
   {
     href: "/median-monday",
-    label: "Median Monday",
+    label: "Median Watch",
     blurb: "Chance to beat the league median and share of the top-scorer payout.",
   },
   {
     href: "/player-records",
     label: "Player Records",
     blurb: "Career win-loss for every player rostered in this league.",
-    soon: true,
   },
   {
     href: "/trade-o-gami",

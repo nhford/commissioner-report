@@ -25,7 +25,7 @@ export default function MedianMondayView({ pulls, standings }: Props) {
   if (!pulls.length) {
     return (
       <p className="text-sm text-white/65">
-        No Median Monday pulls yet. Run the scraper after applying the Supabase
+        No Median Watch pulls yet. Run the scraper after applying the Supabase
         migration.
       </p>
     );
@@ -33,41 +33,21 @@ export default function MedianMondayView({ pulls, standings }: Props) {
 
   return (
     <div className="space-y-4">
-      <label className="block md:hidden text-sm text-white/70">
-        Snapshot
-        <select
-          value={pullId}
-          onChange={(event) => setPullId(event.target.value)}
-          className="mt-1 block w-full min-h-11 rounded border border-white/70 bg-neutral-800 px-3 text-white touch-manipulation focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-        >
-          {pulls.map((pull) => (
-            <option key={pull.id} value={pull.id}>
-              {formatPullLabel(
-                pull.week,
-                pull.pulled_at,
-                pull.season,
-                league.current_season,
-              )}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="hidden md:block">
-        <InPageTabs
-          label="Pull"
-          value={pullId}
-          onChange={setPullId}
-          tabs={pulls.map((pull) => ({
-            id: pull.id,
-            label: formatPullLabel(
-              pull.week,
-              pull.pulled_at,
-              pull.season,
-              league.current_season,
-            ),
-          }))}
-        />
-      </div>
+      <InPageTabs
+        scroll
+        label="Pull"
+        value={pullId}
+        onChange={setPullId}
+        tabs={pulls.map((pull) => ({
+          id: pull.id,
+          label: formatPullLabel(
+            pull.week,
+            pull.pulled_at,
+            pull.season,
+            league.current_season,
+          ),
+        }))}
+      />
       <MedianStandings rows={rows} />
       <p className="text-xs text-white/55">
         <span className="md:hidden">Top half = currently above the median. </span>

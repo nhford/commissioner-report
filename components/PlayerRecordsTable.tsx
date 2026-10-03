@@ -22,13 +22,19 @@ function recordColumn(
   label: string,
   wins: (row: PlayerRecord) => number,
   games: (row: PlayerRecord) => number,
+  className?: string,
 ): Column<PlayerRecord> {
   return {
     key,
     label,
     natural: "desc",
     numeric: true,
-    sortValue: (row) => wins(row),
+    className,
+    sortValue: (row) => {
+      const w = wins(row);
+      const losses = games(row) - w;
+      return w - losses;
+    },
     render: (row) => formatRecord(wins(row), games(row)),
   };
 }
@@ -39,17 +45,17 @@ const COLUMNS: Column<PlayerRecord>[] = [
     label: "Player",
     natural: "desc",
     align: "left",
+    className: "whitespace-nowrap",
     sortValue: (row) => row.name,
     render: (row) => (
-      <span className="block truncate font-semibold" title={row.name}>
-        {row.name}
-      </span>
+      <span className="block whitespace-nowrap font-semibold">{row.name}</span>
     ),
   },
   {
     key: "pos",
     label: "Pos",
     natural: "desc",
+    className: "hidden md:table-cell",
     sortValue: (row) => row.pos,
     render: (row) => row.pos,
   },
@@ -57,32 +63,56 @@ const COLUMNS: Column<PlayerRecord>[] = [
     key: "teams",
     label: "Teams",
     natural: "desc",
+    className: "whitespace-nowrap",
     sortValue: (row) => row.teams.join(","),
     render: (row) => {
       const teams = uniqueTeams(row.teams);
+      const extra = Math.max(0, teams.length - 2);
       return (
-        <span className="flex flex-wrap items-center gap-1" title={teams.join(", ")}>
+        <span className="inline-flex flex-wrap items-center gap-1" title={teams.join(", ")}>
           {teams.map((team, index) => (
-            <TeamLogo
+            <span
               key={`${row.name}-${team}-${index}`}
-              src={nflLogoUrl(team)}
-              alt={team}
-              size="sm"
-            />
+              className={index >= 2 ? "hidden md:inline-flex" : "inline-flex"}
+            >
+              <TeamLogo src={nflLogoUrl(team)} alt={team} size="sm" />
+            </span>
           ))}
+          {extra > 0 ? (
+            <span className="tabular-nums text-neutral-600 md:hidden">(+{extra})</span>
+          ) : null}
         </span>
       );
     },
   },
   recordColumn("starterWl", "Starter", (row) => row.ws, (row) => row.gs),
-  recordColumn("teamWl", "On team", (row) => row.w, (row) => row.g),
-  recordColumn("playoffStarter", "Playoff (starter)", (row) => row.pws, (row) => row.pgs),
-  recordColumn("playoffTeam", "Playoff (on team)", (row) => row.pw, (row) => row.pg),
+  recordColumn(
+    "teamWl",
+    "On team",
+    (row) => row.w,
+    (row) => row.g,
+    "hidden md:table-cell",
+  ),
+  recordColumn(
+    "playoffStarter",
+    "Playoff (starter)",
+    (row) => row.pws,
+    (row) => row.pgs,
+    "hidden md:table-cell",
+  ),
+  recordColumn(
+    "playoffTeam",
+    "Playoff (on team)",
+    (row) => row.pw,
+    (row) => row.pg,
+    "hidden md:table-cell",
+  ),
   {
     key: "titles",
     label: "Titles",
     natural: "desc",
     numeric: true,
+    className: "hidden md:table-cell",
     sortValue: (row) => row.titles,
     render: (row) => row.titles,
   },
@@ -91,6 +121,7 @@ const COLUMNS: Column<PlayerRecord>[] = [
     label: "Win %",
     natural: "desc",
     numeric: true,
+    className: "hidden md:table-cell",
     sortValue: (row) => row.winPct,
     render: (row) => formatPct(row.winPct),
   },
@@ -112,13 +143,26 @@ export default function PlayerRecordsTable({ players }: Props) {
     () => filterPlayers(players, query, pos, minStarts, special),
     [minStarts, players, pos, query, special],
   );
+  const columns = useMemo(() => {
+    if (special === null) return COLUMNS;
+    return COLUMNS.map((column) =>
+      column.key === "starterWl"
+        ? { ...column, sortValue: (row: PlayerRecord) => row.gs }
+        : column,
+    );
+  }, [special]);
+
+  function clearSpecial() {
+    if (special === null) return;
+    setMinStarts(savedMinStarts.current ?? DEFAULT_MIN_STARTS);
+    savedMinStarts.current = null;
+    setSpecial(null);
+  }
 
   function toggleSpecial(next: Exclude<SpecialRecordFilter, null>) {
     const turningOff = special === next;
     if (turningOff) {
-      setMinStarts(savedMinStarts.current ?? DEFAULT_MIN_STARTS);
-      savedMinStarts.current = null;
-      setSpecial(null);
+      clearSpecial();
       return;
     }
     if (special === null) savedMinStarts.current = minStarts;
@@ -175,6 +219,9 @@ export default function PlayerRecordsTable({ players }: Props) {
         </FilterRow>
         <FilterRow label="Other">
           <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Other">
+            <Chip pressed={special === null} onClick={clearSpecial}>
+              All
+            </Chip>
             <Chip
               pressed={special === "undefeated"}
               onClick={() => toggleSpecial("undefeated")}
@@ -187,6 +234,9 @@ export default function PlayerRecordsTable({ players }: Props) {
             >
               Winless
             </Chip>
+            <Chip pressed={special === "even"} onClick={() => toggleSpecial("even")}>
+              .500
+            </Chip>
           </div>
         </FilterRow>
       </div>
@@ -196,15 +246,20 @@ export default function PlayerRecordsTable({ players }: Props) {
           : `${rows.length} of ${players.length} players`}
       </p>
       {rows.length ? (
-        <ReportTable
-          caption="Career fantasy win-loss for every player rostered in this league"
-          tableClassName="min-w-[56rem]"
-          columns={COLUMNS}
-          rows={rows}
-          rowKey={(row) => row.name}
-          defaultSort={{ key: "starterWl", dir: "desc" }}
-          renderExpanded={(row) => <SeasonDetail player={row} />}
-        />
+        <>
+          <p className="text-sm text-white/55 md:hidden">Click on a row to expand</p>
+          <ReportTable
+            key={special ?? "all"}
+            caption="Career fantasy win-loss for every player rostered in this league"
+            layout="auto"
+            tableClassName="text-xs md:text-base"
+            columns={columns}
+            rows={rows}
+            rowKey={(row) => row.name}
+            defaultSort={{ key: "starterWl", dir: "desc" }}
+            renderExpanded={(row) => <SeasonDetail player={row} />}
+          />
+        </>
       ) : (
         <p className="text-sm text-white/65">No players match these filters.</p>
       )}
@@ -252,16 +307,64 @@ function Chip({
   );
 }
 
+function PhoneCareerStats({ player }: { player: PlayerRecord }) {
+  const teams = uniqueTeams(player.teams);
+  const stats = [
+    { label: "Pos", value: player.pos || "—" },
+    { label: "On team", value: formatRecord(player.w, player.g) },
+    { label: "Playoff (starter)", value: formatRecord(player.pws, player.pgs) },
+    { label: "Playoff (on team)", value: formatRecord(player.pw, player.pg) },
+    { label: "Titles", value: String(player.titles) },
+    { label: "Win %", value: formatPct(player.winPct) },
+  ];
+
+  return (
+    <dl className="mb-3 grid grid-cols-2 gap-x-4 gap-y-2 md:hidden">
+      {stats.map((stat) => (
+        <div key={stat.label}>
+          <dt className="text-neutral-500">{stat.label}</dt>
+          <dd className="font-medium tabular-nums">{stat.value}</dd>
+        </div>
+      ))}
+      <div className="col-span-2">
+        <dt className="text-neutral-500">Teams</dt>
+        <dd className="mt-1">
+          {teams.length ? (
+            <span className="flex flex-wrap items-center gap-1" title={teams.join(", ")}>
+              {teams.map((team, index) => (
+                <TeamLogo
+                  key={`${player.name}-career-${team}-${index}`}
+                  src={nflLogoUrl(team)}
+                  alt={team}
+                  size="sm"
+                />
+              ))}
+            </span>
+          ) : (
+            "—"
+          )}
+        </dd>
+      </div>
+    </dl>
+  );
+}
+
 function SeasonDetail({ player }: { player: PlayerRecord }) {
   if (!player.seasons.length) {
     return (
-      <p className="text-sm text-neutral-600">
-        No year-by-year detail yet. Run a full player-records scrape.
-      </p>
+      <div className="max-md:w-0 max-md:min-w-full">
+        <PhoneCareerStats player={player} />
+        <p className="text-sm text-neutral-600">
+          No year-by-year detail yet. Run a full player-records scrape.
+        </p>
+      </div>
     );
   }
 
   return (
+    <div className="max-md:w-0 max-md:min-w-full">
+      <PhoneCareerStats player={player} />
+      <div className="max-md:overflow-x-auto">
     <table className="w-full text-sm text-left">
       <caption className="sr-only">{`${player.name} year-by-year roster and starter points`}</caption>
       <thead>
@@ -319,5 +422,7 @@ function SeasonDetail({ player }: { player: PlayerRecord }) {
         })}
       </tbody>
     </table>
+      </div>
+    </div>
   );
 }
