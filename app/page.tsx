@@ -6,9 +6,13 @@ import { formatUpdated } from "@/lib/format";
 export const revalidate = 3600;
 
 export default async function Home() {
-  const median = await getReport("median-monday");
+  const [median, players] = await Promise.all([
+    getReport("median-monday"),
+    getReport("player-records"),
+  ]);
   const updated: Record<string, string | null> = {
     "/median-monday": formatUpdated(median?.last_updated),
+    "/player-records": formatUpdated(players?.last_updated),
   };
 
   return (

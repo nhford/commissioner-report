@@ -18,14 +18,28 @@ export default async function PlayerRecordsPage() {
     <div>
       <h1 className="text-2xl md:text-3xl font-bold">Player Records</h1>
       <p className="mt-2 text-sm text-white/65">{formatReportStamp(report)}</p>
-      <p className="mt-3 max-w-2xl text-sm text-white/70">
+      <details className="mt-3 max-w-2xl md:hidden">
+        <summary className="min-h-11 cursor-pointer text-sm text-white/70 underline decoration-white/40 underline-offset-2">
+          How Player Records works
+        </summary>
+        <p className="mt-2 text-sm text-white/70">
+          Regular-season and winners-bracket playoff games are counted separately.
+          Consolation games do not count toward records, year-by-year starts, or
+          average starter points. On-team W–L includes bench and IR; starter W–L
+          is the starting lineup only. A title is credited if the player appeared
+          on the champion&apos;s roster in any week that season. Filter by name,
+          position, or minimum starts. Click a row for year-by-year fantasy teams,
+          NFL clubs, and average points as a starter.
+        </p>
+      </details>
+      <p className="mt-3 hidden max-w-2xl text-sm text-white/70 md:block">
         Regular-season and winners-bracket playoff games are counted separately.
         Consolation games do not count toward records, year-by-year starts, or
         average starter points. On-team W–L includes bench and IR; starter W–L
         is the starting lineup only. A title is credited if the player appeared
-        on the champion&apos;s roster in any week that season.
-        Filter by name, position, or minimum starts. Click a row for year-by-year
-        fantasy teams, NFL clubs, and average points as a starter.
+        on the champion&apos;s roster in any week that season. Filter by name,
+        position, or minimum starts. Click a row for year-by-year fantasy teams,
+        NFL clubs, and average points as a starter.
       </p>
 
       <div className="mt-6">
