@@ -7,6 +7,7 @@ import {
 } from "./logos";
 import { parseSeasons, type PlayerRecord, type PlayerSeason } from "./player-records";
 import type { TradeRow } from "./trades";
+import type { SuperlativeDetail, SuperlativeRow } from "./superlatives";
 
 export type ReportRow = {
   id: string;
@@ -173,4 +174,39 @@ export async function getTrades(): Promise<{
     owners: (row.owners ?? []) as string[],
   }));
   return { report, trades };
+}
+
+export async function getSuperlatives(): Promise<{
+  report: ReportRow | null;
+  rows: SuperlativeRow[];
+}> {
+  const supabase = getSupabase();
+  if (!supabase) return { report: null, rows: [] };
+
+  const [report, rowsRes] = await Promise.all([
+    getReport("superlatives"),
+    supabase
+      .from("superlatives")
+      .select(
+        "category, scope, rank, subject_type, subject_key, subject_name, value, display, detail",
+      )
+      .order("category")
+      .order("rank"),
+  ]);
+  if (rowsRes.error) {
+    console.error(rowsRes.error.message);
+    return { report, rows: [] };
+  }
+  const rows = (rowsRes.data ?? []).map((row) => ({
+    category: row.category as string,
+    scope: row.scope as string,
+    rank: Number(row.rank),
+    subject_type: row.subject_type as string,
+    subject_key: row.subject_key as string,
+    subject_name: row.subject_name as string,
+    value: Number(row.value),
+    display: row.display as string,
+    detail: (row.detail ?? {}) as SuperlativeDetail,
+  }));
+  return { report, rows };
 }

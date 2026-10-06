@@ -1,11 +1,16 @@
 type Props = {
   src: string | null;
   alt: string;
-  size?: "sm" | "md";
+  size?: "sm" | "md" | "lg";
 };
 
 export default function TeamLogo({ src, alt, size = "md" }: Props) {
-  const box = size === "sm" ? "h-6 w-6" : "h-8 w-8 md:h-10 md:w-10";
+  const box =
+    size === "sm"
+      ? "h-6 w-6"
+      : size === "lg"
+        ? "h-24 w-24 text-2xl"
+        : "h-8 w-8 md:h-10 md:w-10";
   if (!src) {
     const initial = alt.trim().charAt(0).toUpperCase() || "?";
     return (
