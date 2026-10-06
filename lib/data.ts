@@ -34,8 +34,23 @@ export type MedianStanding = {
   projection: number;
   median: number;
   payout: number;
+  median_m1: number | null;
+  payout_m1: number | null;
+  median_m2: number | null;
+  payout_m2: number | null;
   logo_path: string | null;
 };
+
+const STANDING_COLUMNS =
+  "pull_id, team, rank, current, projection, median, payout, logo_path, median_m1, payout_m1, median_m2, payout_m2";
+const STANDING_COLUMNS_LEGACY =
+  "pull_id, team, rank, current, projection, median, payout, logo_path";
+
+function optionalNumber(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
 
 export const getReport = cache(async (id: string): Promise<ReportRow | null> => {
   const supabase = getSupabase();
@@ -71,21 +86,33 @@ export async function getMedianHistory(): Promise<{
   if (!pulls.length) return { pulls: [], standings: [] };
 
   const [standingsRes, logosRes] = await Promise.all([
-    supabase
-      .from("median_standings")
-      .select("pull_id, team, rank, current, projection, median, payout, logo_path"),
+    supabase.from("median_standings").select(STANDING_COLUMNS),
     supabase.from("fantasy_logos").select("season, team_name, logo_path"),
   ]);
+  let standingRows = standingsRes.data;
   if (standingsRes.error) {
-    console.error(standingsRes.error.message);
-    return { pulls, standings: [] };
+    const legacy = await supabase
+      .from("median_standings")
+      .select(STANDING_COLUMNS_LEGACY);
+    if (legacy.error) {
+      console.error(standingsRes.error.message);
+      console.error(legacy.error.message);
+      return { pulls, standings: [] };
+    }
+    standingRows = legacy.data;
   }
   if (logosRes.error) console.error(logosRes.error.message);
 
   const catalog = (logosRes.data ?? []) as FantasyLogoRow[];
   const seasonByPull = new Map(pulls.map((pull) => [pull.id, pull.season]));
-  const standings = ((standingsRes.data ?? []) as MedianStanding[]).map((row) => ({
+  const standings = ((standingRows ?? []) as MedianStanding[]).map((row) => ({
     ...row,
+    median: Number(row.median),
+    payout: Number(row.payout),
+    median_m1: optionalNumber(row.median_m1),
+    payout_m1: optionalNumber(row.payout_m1),
+    median_m2: optionalNumber(row.median_m2),
+    payout_m2: optionalNumber(row.payout_m2),
     logo_path: resolveTeamLogoPath(
       row.team,
       seasonByPull.get(row.pull_id),

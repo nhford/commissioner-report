@@ -22,6 +22,24 @@ from supabase_client import get_service_client
 FA_LIMIT = 50
 
 
+def projected_breakdown(player, week: int) -> dict | None:
+    stats = getattr(player, "stats", None) or {}
+    raw = (stats.get(week) or {}).get("projected_breakdown")
+    if not isinstance(raw, dict):
+        raw = getattr(player, "projected_breakdown", None)
+    if not isinstance(raw, dict):
+        return None
+    out = {}
+    for key, value in raw.items():
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if number:
+            out[str(key)] = round(number, 4)
+    return out or None
+
+
 def week_projection(player, week: int) -> float:
     stats = getattr(player, "stats", None) or {}
     from_stats = (stats.get(week) or {}).get("projected_points")
@@ -53,6 +71,7 @@ def empty_row(player, week: int) -> dict:
         "fantasy_team": None,
         "lineup_slot": None,
         "projected_points": week_projection(player, week),
+        "projected_breakdown": projected_breakdown(player, week),
         "percent_owned": percent_owned(player),
         "rostered": False,
         "fa_top_projected": False,
@@ -68,6 +87,7 @@ def merge_player(rows: dict[int, dict], player, week: int) -> dict:
         rows[player_id] = rec
         return rec
     rec["projected_points"] = week_projection(player, week)
+    rec["projected_breakdown"] = projected_breakdown(player, week)
     owned = percent_owned(player)
     if owned is not None:
         rec["percent_owned"] = owned

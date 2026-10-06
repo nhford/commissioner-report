@@ -47,3 +47,6 @@ __pycache__/
 next-env.d.ts
 
 TODOS.md
+
+# nflverse downloads for score-model calibration
+data/.cache/

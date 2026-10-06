@@ -1,0 +1,109 @@
+{
+  "seasons": [
+    2018,
+    2025
+  ],
+  "n_team_games": 4178,
+  "n_games": 2127,
+  "sd_margin": 12.7752,
+  "sd_total": 13.1316,
+  "corr_margin_total": 0.0176,
+  "xp_rate": 0.9456,
+  "rates_per_point": {
+    "passing_yards": 10.4502,
+    "rushing_yards": 5.051,
+    "passing_tds": 0.0664,
+    "rushing_tds": 0.04
+  },
+  "pass_td_share": 0.624,
+  "td_elasticity": {
+    "passing": 1.1281,
+    "rushing": 1.2817
+  },
+  "td_resid_var": {
+    "passing": 0.6677,
+    "rushing": 0.5549
+  },
+  "stat_cv": {
+    "QB": {
+      "passingYards": 0.2679,
+      "rushingYards": 0.8046
+    },
+    "RB": {
+      "rushingYards": 0.6094,
+      "receivingYards": 0.9598,
+      "receivingReceptions": 0.6966
+    },
+    "WR": {
+      "receivingYards": 0.616,
+      "receivingReceptions": 0.4951
+    },
+    "TE": {
+      "receivingYards": 0.6213,
+      "receivingReceptions": 0.4918
+    }
+  },
+  "stat_elasticity": {
+    "QB": {
+      "passingYards": 0.2698,
+      "rushingYards": 0.1414
+    },
+    "RB": {
+      "rushingYards": 0.3854,
+      "receivingYards": 0.0715,
+      "receivingReceptions": 0.0
+    },
+    "WR": {
+      "receivingYards": 0.2745,
+      "receivingReceptions": 0.1087
+    },
+    "TE": {
+      "receivingYards": 0.199,
+      "receivingReceptions": 0.07
+    }
+  },
+  "position_points_cv": {
+    "QB": 0.4254,
+    "RB": 0.6883,
+    "WR": 0.7626,
+    "TE": 0.814,
+    "K": 1.1,
+    "D/ST": 0.55,
+    "FLEX": 0.7626
+  },
+  "position_points_cv_ppr": {
+    "QB": 0.4253,
+    "RB": 0.604,
+    "WR": 0.6183,
+    "TE": 0.633,
+    "K": 1.1,
+    "D/ST": 0.55,
+    "FLEX": 0.6183
+  },
+  "count_var_ratio": {
+    "passingInterceptions": 1.0,
+    "defensiveSacks": 1.1695,
+    "defensiveInterceptions": 1.0,
+    "defensiveFumbles": 1.0
+  },
+  "fg_distance_share": {
+    "under40": 0.5707,
+    "from40To49": 0.2714,
+    "from50Plus": 0.1578
+  },
+  "injury": {
+    "source": "Mack et al., AJSM 2020, time-loss lower-extremity injuries per 10,000 player-plays, NFL games 2015-2018",
+    "per_10000": {
+      "QB": 4.5,
+      "RB": 16.0,
+      "WR": 12.1,
+      "TE": 10.3
+    },
+    "snaps": {
+      "QB": 64,
+      "RB": 42,
+      "WR": 58,
+      "TE": 48
+    }
+  }
+}

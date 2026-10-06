@@ -38,15 +38,17 @@ export default async function MedianMondayPage() {
         <p className="mt-2 text-sm text-white/70">
           Each week a team can beat its opponent and also earn a bonus win for
           finishing in the top half of the league. These percentages are a Monte
-          Carlo of remaining starter projections. Choose any snapshot to see
-          that pull.
+          Carlo of remaining starter projections. Snapshots from here on store
+          M1, the original gamma, and M2, the game simulation. Choose any
+          snapshot to see that pull.
         </p>
       </details>
       <p className="mt-3 hidden max-w-2xl text-sm text-white/70 md:block">
         Each week a team can beat its opponent and also earn a bonus win for
         finishing in the top half of the league. These percentages are a Monte
-        Carlo of remaining starter projections. Choose any pull to see that
-        snapshot.
+        Carlo of remaining starter projections. Snapshots from here on store
+        M1, the original gamma, and M2, the game simulation. Choose any pull to
+        see that snapshot.
       </p>
 
       <div className="mt-6">
