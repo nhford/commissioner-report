@@ -52,6 +52,25 @@ function optionalNumber(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
+type RawStanding = {
+  pull_id: string;
+  team: string;
+  rank: number;
+  current: number;
+  projection: number;
+  median: number;
+  payout: number;
+  logo_path: string | null;
+  median_m1?: number | null;
+  payout_m1?: number | null;
+  median_m2?: number | null;
+  payout_m2?: number | null;
+};
+
+function standingList(data: unknown): RawStanding[] {
+  return Array.isArray(data) ? (data as RawStanding[]) : [];
+}
+
 export const getReport = cache(async (id: string): Promise<ReportRow | null> => {
   const supabase = getSupabase();
   if (!supabase) return null;
@@ -89,7 +108,7 @@ export async function getMedianHistory(): Promise<{
     supabase.from("median_standings").select(STANDING_COLUMNS),
     supabase.from("fantasy_logos").select("season, team_name, logo_path"),
   ]);
-  let standingRows = standingsRes.data;
+  let standingRows = standingList(standingsRes.data);
   if (standingsRes.error) {
     const legacy = await supabase
       .from("median_standings")
@@ -99,13 +118,13 @@ export async function getMedianHistory(): Promise<{
       console.error(legacy.error.message);
       return { pulls, standings: [] };
     }
-    standingRows = legacy.data as typeof standingsRes.data;
+    standingRows = standingList(legacy.data);
   }
   if (logosRes.error) console.error(logosRes.error.message);
 
   const catalog = (logosRes.data ?? []) as FantasyLogoRow[];
   const seasonByPull = new Map(pulls.map((pull) => [pull.id, pull.season]));
-  const standings = ((standingRows ?? []) as MedianStanding[]).map((row) => ({
+  const standings = standingRows.map((row) => ({
     ...row,
     median: Number(row.median),
     payout: Number(row.payout),
