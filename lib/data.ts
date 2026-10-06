@@ -99,7 +99,7 @@ export async function getMedianHistory(): Promise<{
       console.error(legacy.error.message);
       return { pulls, standings: [] };
     }
-    standingRows = legacy.data;
+    standingRows = legacy.data as typeof standingsRes.data;
   }
   if (logosRes.error) console.error(logosRes.error.message);
 
