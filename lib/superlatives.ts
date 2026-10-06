@@ -10,11 +10,20 @@ export type SuperlativeDetail = {
   partner_id?: number;
   partner_name?: string | null;
   partner_pos?: string | null;
+  partner_nfl_team?: string | null;
   partner_photo_path?: string | null;
   alternates?: SuperlativeCandidate[];
   logo_path?: string | null;
   partner_logo_path?: string | null;
   nfl_team?: string;
+  owners?: string[];
+  winners?: { owner: string; logo_path?: string | null }[];
+  starters?: {
+    name?: string | null;
+    pos?: string | null;
+    owner?: string | null;
+    points?: number;
+  }[];
   start_season?: number;
   start_week?: number;
   end_season?: number;
@@ -99,19 +108,37 @@ export const AWARDS: AwardDef[] = [
     id: "lowest_team_week",
     label: "Lowest team week",
     group: "team",
-    hint: "Single-week score, including the winners bracket. The same team can hold more than one spot.",
+    hint: "Single-week score from 2024 on, including the winners bracket. The same team can hold more than one spot.",
   },
   {
     id: "highest_team_week",
     label: "Highest team week",
     group: "team",
-    hint: "Single-week score, including the winners bracket. The same team can hold more than one spot.",
+    hint: "Single-week score from 2024 on, including the winners bracket. The same team can hold more than one spot.",
+  },
+  {
+    id: "highest_median",
+    label: "Highest median",
+    group: "team",
+    hint: "Regular-season week since 2024 when the top-half line was highest. In a 12-team week that is 6th place.",
+  },
+  {
+    id: "lowest_median",
+    label: "Lowest median",
+    group: "team",
+    hint: "Regular-season week since 2024 when the top-half line was lowest.",
   },
   {
     id: "payout_wins",
     label: "Payout wins",
     group: "team",
     hint: "Regular-season weeks as the top scorer since 2024. A tie counts for both teams.",
+  },
+  {
+    id: "lowest_payout",
+    label: "Lowest payout",
+    group: "team",
+    hint: "Regular-season week since 2024 when the top score was the smallest, so the weekly pot was easiest to win.",
   },
   {
     id: "total_earnings",
@@ -123,13 +150,13 @@ export const AWARDS: AwardDef[] = [
     id: "median_streak",
     label: "Median streak",
     group: "team",
-    hint: "Regular-season weeks in a row in the top 6. Playoff weeks are skipped and do not break it.",
+    hint: "Regular-season weeks in a row in the top half. In 2022 that is the top 5. Playoff weeks are skipped and do not break it.",
   },
   {
     id: "median_misses",
     label: "Median misses",
     group: "team",
-    hint: "Regular-season weeks in a row outside the top 6. Playoff weeks are skipped.",
+    hint: "Regular-season weeks in a row outside the top half. In 2022 that is outside the top 5. Playoff weeks are skipped.",
   },
   {
     id: "team_duo_trades",
@@ -207,7 +234,7 @@ export function readFilters(search: {
     scope,
     players: flag(search.players, true),
     teams: flag(search.teams, true),
-    hideDefense: flag(search.dst, false),
+    hideDefense: flag(search.dst, true),
   };
 }
 
@@ -223,7 +250,7 @@ export function filterHref(
   if (scope === "season") params.set("scope", "season");
   if (!players) params.set("players", "0");
   if (!teams) params.set("teams", "0");
-  if (hideDefense) params.set("dst", "1");
+  if (!hideDefense) params.set("dst", "0");
   const query = params.toString();
   return query ? `/superlatives?${query}` : "/superlatives";
 }
@@ -241,23 +268,31 @@ export function isDefenseSubject(
   return /\bD\/ST\b/.test(name);
 }
 
-export function podiumRows(rows: SuperlativeRow[], hideDefense: boolean) {
+export function podiumRows(
+  rows: SuperlativeRow[],
+  hideDefense: boolean,
+  limit = 3,
+) {
   const ranked = [...rows].sort((left, right) => left.rank - right.rank);
-  if (!hideDefense) return ranked.slice(0, 3);
   const leader = ranked[0];
-  const alternates = (leader?.detail.alternates ?? []).map((alt, index) => ({
-    category: leader.category,
-    scope: leader.scope,
-    rank: ranked.length + index + 1,
-    subject_type: alt.subject_type,
-    subject_key: String(alt.subject_key),
-    subject_name: alt.subject_name,
-    value: Number(alt.value),
-    display: alt.display,
-    detail: alt.detail ?? {},
-  }));
-  return [...ranked, ...alternates]
-    .filter((row) => !isDefenseSubject(row.subject_name, row.detail))
-    .slice(0, 3)
-    .map((row, index) => ({ ...row, rank: index + 1 }));
+  const alternates =
+    hideDefense && leader
+      ? (leader.detail.alternates ?? []).map((alt, index) => ({
+          category: leader.category,
+          scope: leader.scope,
+          rank: ranked.length + index + 1,
+          subject_type: alt.subject_type,
+          subject_key: String(alt.subject_key),
+          subject_name: alt.subject_name,
+          value: Number(alt.value),
+          display: alt.display,
+          detail: alt.detail ?? {},
+        }))
+      : [];
+  const pool = hideDefense
+    ? [...ranked, ...alternates].filter(
+        (row) => !isDefenseSubject(row.subject_name, row.detail),
+      )
+    : ranked;
+  return pool.slice(0, limit).map((row, index) => ({ ...row, rank: index + 1 }));
 }

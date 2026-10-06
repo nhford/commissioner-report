@@ -38,14 +38,14 @@ export default async function SuperlativesPage({
         <p className="mt-2 text-sm text-white/70">
           All-Time covers 2022 through this season. Current Season is {currentSeason}{" "}
           only. Weekly top-scorer pay is $50 in 2024 and $75 after that. Median
-          streaks count regular-season weeks in the top 6 and can run from one
+          streaks count regular-season weeks in the top half and can run from one
           season into the next. Consolation weeks are ignored.
         </p>
       </details>
       <p className="mt-3 hidden max-w-2xl text-sm text-white/70 md:block">
         All-Time covers 2022 through this season. Current Season is {currentSeason}{" "}
         only. Weekly top-scorer pay is $50 in 2024 and $75 after that. Median
-        streaks count regular-season weeks in the top 6 and can run from one
+        streaks count regular-season weeks in the top half and can run from one
         season into the next. Consolation weeks are ignored.
       </p>
       <div className="mt-6">

@@ -1,10 +1,8 @@
-import TeamLogo from "./TeamLogo";
-import { logoPublicUrl, nflLogoUrl } from "@/lib/logos";
+import SuperlativeCard from "./SuperlativeCard";
 import {
   AWARDS,
   filterHref,
   podiumRows,
-  type SuperlativeDetail,
   type SuperlativeFilters,
   type SuperlativeRow,
 } from "@/lib/superlatives";
@@ -14,41 +12,6 @@ type Props = {
   currentSeason: number;
   filters: SuperlativeFilters;
 };
-
-function portrait(detail: SuperlativeDetail, row: SuperlativeRow) {
-  if (row.subject_type === "duo") {
-    const photos = detail.photo_path || detail.partner_photo_path;
-    if (photos || row.category === "player_duo_starts") {
-      return [
-        {
-          src: logoPublicUrl(detail.photo_path),
-          alt: detail.player_name || row.subject_name,
-        },
-        {
-          src: logoPublicUrl(detail.partner_photo_path),
-          alt: detail.partner_name || "Partner",
-        },
-      ];
-    }
-    return [
-      {
-        src: logoPublicUrl(detail.logo_path),
-        alt: detail.player_name || row.subject_name,
-      },
-      {
-        src: logoPublicUrl(detail.partner_logo_path),
-        alt: detail.partner_name || "Partner",
-      },
-    ];
-  }
-  if (row.subject_type === "nfl" && detail.nfl_team) {
-    return [{ src: nflLogoUrl(detail.nfl_team), alt: detail.nfl_team }];
-  }
-  if (detail.photo_path) {
-    return [{ src: logoPublicUrl(detail.photo_path), alt: row.subject_name }];
-  }
-  return [{ src: logoPublicUrl(detail.logo_path), alt: row.subject_name }];
-}
 
 function seasonClass(active: boolean) {
   return `inline-flex min-h-9 items-center rounded border border-white/70 px-3 text-sm whitespace-nowrap transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
@@ -97,7 +60,7 @@ export default function SuperlativesView({
 }: Props) {
   const scopeId = filters.scope === "all_time" ? "all_time" : String(currentSeason);
   const advancedOpen =
-    !filters.players || !filters.teams || filters.hideDefense;
+    !filters.players || !filters.teams || !filters.hideDefense;
 
   const visible = AWARDS.filter((award) =>
     award.group === "player" ? filters.players : filters.teams,
@@ -107,6 +70,7 @@ export default function SuperlativesView({
       places: podiumRows(
         rows.filter((row) => row.category === award.id && row.scope === scopeId),
         filters.hideDefense,
+        10,
       ),
     }))
     .filter((card) => card.places.length > 0);
@@ -175,41 +139,9 @@ export default function SuperlativesView({
         </p>
       ) : (
         <ul className="grid gap-3 md:grid-cols-2">
-          {visible.map(({ award, places }) => {
-            const leader = places[0];
-            const photos = portrait(leader.detail, leader);
-            return (
-              <li
-                key={award.id}
-                className="rounded-lg border border-white/20 bg-white/5 px-4 py-4"
-              >
-                <h2 className="text-lg font-semibold">{award.label}</h2>
-                <p className="mt-1 text-sm text-white/55">{award.hint}</p>
-                <div className="mt-4 flex items-end gap-3">
-                  {photos.map((photo, index) => (
-                    <TeamLogo
-                      key={`${award.id}-${index}`}
-                      src={photo.src}
-                      alt={photo.alt}
-                      size="lg"
-                    />
-                  ))}
-                </div>
-                <p className="mt-3 text-xl font-semibold">{leader.subject_name}</p>
-                <p className="text-sm text-white/80">{leader.display}</p>
-                {places.length > 1 ? (
-                  <ol className="mt-3 space-y-1 text-sm text-white/70">
-                    {places.slice(1).map((place) => (
-                      <li key={`${award.id}-${place.rank}`}>
-                        {place.rank}. {place.subject_name}
-                        <span className="text-white/45"> · {place.display}</span>
-                      </li>
-                    ))}
-                  </ol>
-                ) : null}
-              </li>
-            );
-          })}
+          {visible.map(({ award, places }) => (
+            <SuperlativeCard key={award.id} award={award} places={places} />
+          ))}
         </ul>
       )}
     </div>

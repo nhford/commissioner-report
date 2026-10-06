@@ -1,17 +1,22 @@
 type Props = {
   src: string | null;
   alt: string;
-  size?: "sm" | "md";
+  size?: "sm" | "md" | "lg";
 };
 
 export default function TeamLogo({ src, alt, size = "md" }: Props) {
-  const box = size === "sm" ? "h-6 w-6" : "h-8 w-8 md:h-10 md:w-10";
+  const box =
+    size === "sm"
+      ? "h-6 w-6"
+      : size === "lg"
+        ? "h-24 w-24"
+        : "h-8 w-8 md:h-10 md:w-10";
   if (!src) {
     const initial = alt.trim().charAt(0).toUpperCase() || "?";
     return (
       <span
         aria-hidden
-        className={`${box} grid shrink-0 place-items-center rounded bg-neutral-200 text-xs font-bold text-neutral-700`}
+        className={`${box} grid shrink-0 place-items-center rounded bg-neutral-200 font-bold text-neutral-700 ${size === "lg" ? "text-2xl" : "text-xs"}`}
       >
         {initial}
       </span>

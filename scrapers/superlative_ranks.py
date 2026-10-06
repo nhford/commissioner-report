@@ -5,7 +5,8 @@ from __future__ import annotations
 from itertools import combinations
 
 PAYOUT_START = 2024
-MEDIAN_CUT = 6
+# Team-week highs and lows, and the week-level median and payout awards, start here.
+FORMAT_START = 2024
 
 
 def usable_owner(name) -> str | None:
@@ -89,18 +90,20 @@ def split_cents(rate: float, count: int) -> list[float]:
 
 
 def median_cutoff(scores: list[float]) -> float:
+    """Score of the last team in the top half. 10 teams use 5th place; 12 use 6th."""
     ordered = sorted(scores, reverse=True)
     if not ordered:
         return 0.0
-    return ordered[min(MEDIAN_CUT - 1, len(ordered) - 1)]
+    place = max(len(ordered) // 2, 1)
+    return ordered[place - 1]
 
 
 def owner_logo(logos: dict, season: int, owner: str, fallback_season: int) -> str | None:
     return logos.get((season, owner)) or logos.get((fallback_season, owner))
 
 
-PODIUM = 3
-ALTERNATES = 17
+STORED = 10
+BENCH = 40
 
 
 def _candidate(item: dict) -> dict:
@@ -119,12 +122,12 @@ def emit(
     scope: str,
     items: list[dict],
 ) -> list[dict]:
-    chosen = items[: PODIUM + ALTERNATES]
+    chosen = items[: STORED + BENCH]
     rows = []
-    for rank, item in enumerate(chosen[:PODIUM], start=1):
+    for rank, item in enumerate(chosen[:STORED], start=1):
         detail = dict(item.get("detail") or {})
         if rank == 1:
-            extras = [_candidate(extra) for extra in chosen[PODIUM:]]
+            extras = [_candidate(extra) for extra in chosen[STORED:]]
             if extras:
                 detail["alternates"] = extras
         rows.append(
@@ -241,6 +244,7 @@ def _player_items(counts: dict[int, float], latest: dict[int, dict], suffix: str
                     "player_id": pid,
                     "player_name": name,
                     "pos": info.get("pos"),
+                    "nfl_team": info.get("nfl_team"),
                 },
             }
         )
@@ -275,7 +279,7 @@ def lowest_starts(rows: list[dict], scope: str) -> list[dict]:
         chosen.append(row)
     chosen.sort(key=lambda row: (r2(row["points"]), int(row["season"]), int(row["week"]), row["name"]))
     items = []
-    for row in chosen[:3]:
+    for row in chosen:
         pid = int(row["player_id"])
         season = int(row["season"])
         week = int(row["week"])
@@ -293,6 +297,7 @@ def lowest_starts(rows: list[dict], scope: str) -> list[dict]:
                     "player_id": pid,
                     "player_name": row["name"],
                     "pos": pos,
+                    "nfl_team": row.get("nfl_team"),
                     "season": season,
                     "week": week,
                 },
@@ -301,9 +306,10 @@ def lowest_starts(rows: list[dict], scope: str) -> list[dict]:
     return items
 
 
-def auction_totals(picks: list[dict], scope: str) -> list[dict]:
+def auction_totals(picks: list[dict], scope: str, players: dict | None = None) -> list[dict]:
     totals: dict[int, float] = {}
     latest: dict[int, dict] = {}
+    players = players or {}
     for pick in picks:
         season = int(pick["season"])
         if not in_scope(season, scope):
@@ -320,6 +326,7 @@ def auction_totals(picks: list[dict], scope: str) -> list[dict]:
     items = []
     for pid, total in totals.items():
         info = latest[pid]
+        known = players.get(pid) or {}
         items.append(
             {
                 "subject_type": "player",
@@ -330,7 +337,8 @@ def auction_totals(picks: list[dict], scope: str) -> list[dict]:
                 "detail": {
                     "player_id": pid,
                     "player_name": info["name"],
-                    "pos": info.get("pos"),
+                    "pos": info.get("pos") or known.get("pos"),
+                    "nfl_team": known.get("nfl_team"),
                 },
             }
         )
@@ -359,7 +367,8 @@ def movement_leaders(events: list[dict], latest: dict[int, dict], scope: str, ki
 def team_week_extremes(rows: list[dict], scope: str, logos: dict, current_season: int, lowest: bool) -> list[dict]:
     chosen = []
     for row in rows:
-        if not in_scope(int(row["season"]), scope):
+        season = int(row["season"])
+        if season < FORMAT_START or not in_scope(season, scope):
             continue
         owner = usable_owner(row.get("owner"))
         if not owner:
@@ -374,7 +383,7 @@ def team_week_extremes(rows: list[dict], scope: str, logos: dict, current_season
         )
     )
     items = []
-    for row in chosen[:3]:
+    for row in chosen:
         owner = usable_owner(row.get("owner"))
         season = int(row["season"])
         week = int(row["week"])
@@ -732,9 +741,11 @@ def player_duos(rows: list[dict], scope: str) -> list[dict]:
                     "player_id": int(first["player_id"]),
                     "player_name": first["name"],
                     "pos": first.get("pos"),
+                    "nfl_team": first.get("nfl_team"),
                     "partner_id": int(second["player_id"]),
                     "partner_name": second["name"],
                     "partner_pos": second.get("pos"),
+                    "partner_nfl_team": second.get("nfl_team"),
                 },
             }
         )
@@ -743,7 +754,7 @@ def player_duos(rows: list[dict], scope: str) -> list[dict]:
 
 
 def nfl_starter_weeks(rows: list[dict], scope: str) -> list[dict]:
-    counts: dict[tuple[str, int, int], int] = {}
+    groups: dict[tuple[str, int, int], list[dict]] = {}
     for row in rows:
         team = row.get("nfl_team")
         if not team or team == "None" or not row.get("started"):
@@ -751,20 +762,115 @@ def nfl_starter_weeks(rows: list[dict], scope: str) -> list[dict]:
         if not in_scope(int(row["season"]), scope):
             continue
         key = (str(team), int(row["season"]), int(row["week"]))
-        counts[key] = counts.get(key, 0) + 1
+        groups.setdefault(key, []).append(row)
     items = []
-    for (team, season, week), count in counts.items():
+    for (team, season, week), starters in groups.items():
+        listed = sorted(starters, key=lambda row: (-r2(row["points"]), row.get("name") or ""))
+        count = len(listed)
+        noun = "starter" if count == 1 else "starters"
         items.append(
             {
                 "subject_type": "nfl",
                 "subject_key": f"{team}:{season}:{week}",
                 "subject_name": team,
                 "value": count,
-                "display": f"{count} starters · {week_text(season, week)}",
-                "detail": {"nfl_team": team, "season": season, "week": week},
+                "display": f"{count} {noun} · {week_text(season, week)}",
+                "detail": {
+                    "nfl_team": team,
+                    "season": season,
+                    "week": week,
+                    "starters": [
+                        {
+                            "name": row.get("name"),
+                            "pos": row.get("pos"),
+                            "owner": usable_owner(row.get("owner")),
+                            "points": r2(row["points"]),
+                        }
+                        for row in listed
+                    ],
+                },
             }
         )
     items.sort(key=lambda item: (-item["value"], item["subject_name"], item["detail"]["season"], item["detail"]["week"]))
+    return items
+
+
+def _week_item(season: int, week: int, score: float, names: list[str], detail: dict) -> dict:
+    label = " & ".join(names) if names else "—"
+    return {
+        "subject_type": "week",
+        "subject_key": f"{season}:{week}",
+        "subject_name": week_text(season, week),
+        "value": score,
+        "display": f"{points_text(score)} · {label}",
+        "detail": detail,
+    }
+
+
+def median_weeks(rows: list[dict], scope: str, logos: dict, current_season: int, highest: bool) -> list[dict]:
+    buckets: dict[tuple[int, int], list[dict]] = {}
+    for row in rows:
+        season = int(row["season"])
+        if not row.get("is_regular") or season < FORMAT_START or not in_scope(season, scope):
+            continue
+        if not usable_owner(row.get("owner")):
+            continue
+        buckets.setdefault((season, int(row["week"])), []).append(row)
+    items = []
+    for (season, week), week_rows in buckets.items():
+        cut = median_cutoff([r2(row["points"]) for row in week_rows])
+        on_line = [row for row in week_rows if r2(row["points"]) == cut]
+        on_line.sort(key=lambda row: int(row["team_id"]))
+        names: list[str] = []
+        for row in on_line:
+            owner = usable_owner(row.get("owner"))
+            if owner and owner not in names:
+                names.append(owner)
+        logo = owner_logo(logos, season, names[0], current_season) if len(names) == 1 else None
+        items.append(
+            _week_item(
+                season,
+                week,
+                cut,
+                names,
+                {"season": season, "week": week, "logo_path": logo, "owners": names},
+            )
+        )
+    if highest:
+        items.sort(key=lambda item: (-item["value"], item["detail"]["season"], item["detail"]["week"]))
+    else:
+        items.sort(key=lambda item: (item["value"], item["detail"]["season"], item["detail"]["week"]))
+    return items
+
+
+def lowest_payout_weeks(rows: list[dict], scope: str, logos: dict, current_season: int) -> list[dict]:
+    items = []
+    for (season, week), winners in weekly_winners(rows, scope):
+        score = r2(winners[0]["points"])
+        packed = []
+        names: list[str] = []
+        for row in winners:
+            owner = usable_owner(row.get("owner"))
+            if not owner or owner in names:
+                continue
+            names.append(owner)
+            packed.append(
+                {
+                    "owner": owner,
+                    "logo_path": owner_logo(logos, season, owner, current_season),
+                }
+            )
+        logo = packed[0]["logo_path"] if len(packed) == 1 else None
+        items.append(
+            _week_item(
+                season,
+                week,
+                score,
+                names,
+                {"season": season, "week": week, "logo_path": logo, "winners": packed},
+            )
+        )
+    items.sort(key=lambda item: (item["value"], item["detail"]["season"], item["detail"]["week"]))
     return items
 
 
@@ -789,7 +895,7 @@ def build_superlatives(
     for scope in scopes:
         rows.extend(emit("most_fantasy_teams", scope, most_fantasy_teams(player_weeks, scope)))
         rows.extend(emit("lowest_start", scope, lowest_starts(player_weeks, scope)))
-        rows.extend(emit("most_auction_dollars", scope, auction_totals(draft_picks, scope)))
+        rows.extend(emit("most_auction_dollars", scope, auction_totals(draft_picks, scope, latest)))
         rows.extend(emit("most_added", scope, movement_leaders(events, latest, scope, "add", "adds")))
         rows.extend(emit("most_dropped", scope, movement_leaders(events, latest, scope, "drop", "drops")))
         rows.extend(
@@ -809,8 +915,29 @@ def build_superlatives(
                 team_week_extremes(team_weeks, scope, logos, current_season, False),
             )
         )
+        rows.extend(
+            emit(
+                "highest_median",
+                scope,
+                median_weeks(team_weeks, scope, logos, current_season, True),
+            )
+        )
+        rows.extend(
+            emit(
+                "lowest_median",
+                scope,
+                median_weeks(team_weeks, scope, logos, current_season, False),
+            )
+        )
         rows.extend(emit("player_duo_starts", scope, player_duos(player_weeks, scope)))
         rows.extend(emit("payout_wins", scope, payout_wins(team_weeks, scope, logos, current_season)))
+        rows.extend(
+            emit(
+                "lowest_payout",
+                scope,
+                lowest_payout_weeks(team_weeks, scope, logos, current_season),
+            )
+        )
         rows.extend(
             emit(
                 "total_earnings",
@@ -905,11 +1032,11 @@ def self_test() -> None:
             "display": str(index),
             "detail": {},
         }
-        for index in range(10)
+        for index in range(12)
     ]
     emitted = emit("most_added", "all_time", sample)
-    assert len(emitted) == 3
-    assert len(emitted[0]["detail"]["alternates"]) == 7
+    assert len(emitted) == 10
+    assert len(emitted[0]["detail"]["alternates"]) == 2
     assert "alternates" not in emitted[1]["detail"]
 
     payouts = {
@@ -919,7 +1046,9 @@ def self_test() -> None:
     assert split_cents(50, 2) == [25.0, 25.0]
     assert split_cents(50, 3) == [16.67, 16.67, 16.66]
     assert abs(sum(split_cents(50, 3)) - 50) < 0.001
-    assert median_cutoff([70, 60, 50, 40, 30, 20, 10]) == 20
+    assert median_cutoff([70, 60, 50, 40, 30, 20, 10]) == 50
+    assert median_cutoff(list(range(10, 0, -1))) == 6
+    assert median_cutoff(list(range(12, 0, -1))) == 7
 
     weeks = [
         _pw(player_id=1, name="A", owner="Noah", week=1, points=-2),
@@ -1008,6 +1137,39 @@ def self_test() -> None:
     current = total_earnings(tied, payouts, {}, "2024", {}, 2024)
     assert next(item["value"] for item in current if item["subject_name"] == "Noah") == 25
     assert current[0]["detail"]["prizes_missing"] is False
+
+    weeks_only = team_week_extremes(
+        [
+            _tw(owner="Noah", season=2022, week=1, points=1),
+            _tw(owner="Liam", season=2024, week=1, points=50),
+        ],
+        "all_time",
+        {},
+        2026,
+        True,
+    )
+    assert [item["detail"]["season"] for item in weeks_only] == [2024]
+
+    high = median_weeks(scores, "all_time", {}, 2026, True)
+    assert high and high[0]["subject_type"] == "week"
+    assert high[0]["value"] == 50
+
+    cheap = lowest_payout_weeks(tied, "all_time", {}, 2026)
+    assert cheap[0]["value"] == 100
+    assert cheap[0]["detail"]["winners"][0]["owner"] == "Noah"
+    assert "Liam" in cheap[0]["display"]
+
+    starters = nfl_starter_weeks(
+        [
+            _pw(name="A", nfl_team="SF", owner="Noah", points=10),
+            _pw(player_id=2, name="B", nfl_team="SF", owner="Liam", points=4),
+            _pw(player_id=3, name="C", nfl_team="KC", owner="Sam", points=8),
+        ],
+        "all_time",
+    )
+    sf = next(item for item in starters if item["subject_name"] == "SF")
+    assert sf["value"] == 2
+    assert [starter["name"] for starter in sf["detail"]["starters"]] == ["A", "B"]
 
     print("superlative ranks ok")
 
