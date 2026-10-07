@@ -17,7 +17,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from calibrate_score_model import load_schedules, load_weekly
-from score_model import default_scoring, load_params, simulate_team_scores
+from score_model import default_scoring, load_params, sanitize_breakdown, simulate_team_scores
 
 PAYOUT = 75.0
 DEAN_N = 20000
@@ -147,6 +147,54 @@ def shared_touchdowns(params: dict) -> None:
     gap = float(np.max(np.abs(qb_td - wr_td)))
     if gap > 1e-6:
         raise SystemExit(f"Shared touchdowns diverged by {gap}")
+
+
+def absurd_yards(params: dict, scoring) -> dict:
+    """A 7,000-yard breakdown is scaled back to one game before it is simulated."""
+    raw = {
+        "rushingAttempts": 16.49,
+        "rushingYards": 7188.46,
+        "rushingYardsPerAttempt": 4.36,
+        "rushingTouchdowns": 0.57,
+        "receivingYards": 2273.23,
+        "receivingReceptions": 2.82,
+        "receivingYardsPerReception": 8.06,
+        "receivingTouchdowns": 0.11,
+        "210": 0.01,
+    }
+    fixed = sanitize_breakdown(raw)
+    if sanitize_breakdown({"receivingYards": 81.0, "210": 1})["receivingYards"] != 81.0:
+        raise SystemExit("A normal yardage line was rewritten")
+    if "rushingYards" in sanitize_breakdown({"rushingYards": 9000.0}):
+        raise SystemExit("Unrepairable thousand-yard line was kept")
+    lines = _line("CLE", "NYJ", spread=2.5, total=39.5, home="NYJ")
+    scores = simulate_team_scores(
+        current_scores={"RB": 0.0},
+        players=[
+            {
+                "fantasy_team": "RB",
+                "nfl_team": "NYJ",
+                "position": "RB",
+                "starter": True,
+                "mode": "pregame",
+                "projected": 16.4,
+                "points": 0.0,
+                "breakdown": raw,
+            }
+        ],
+        scoring=scoring,
+        params=params,
+        lines=lines,
+        n=4000,
+        rng=np.random.default_rng(5),
+    )
+    draws = scores["RB"]
+    return {
+        "rush_yards": float(fixed["rushingYards"]),
+        "rec_yards": float(fixed["receivingYards"]),
+        "mean": float(draws.mean()),
+        "p99": float(np.quantile(draws, 0.99)),
+    }
 
 
 def injury_exit(params: dict, scoring) -> dict:
@@ -370,6 +418,12 @@ def main() -> None:
     )
     shared_touchdowns(params)
     print("Shared touchdown pool: quarterback and receiver receive the same count.")
+    yards = absurd_yards(params, scoring)
+    print(
+        "Absurd yardage repaired: "
+        f"rush={yards['rush_yards']:.1f} rec={yards['rec_yards']:.1f} "
+        f"mean={yards['mean']:.2f} p99={yards['p99']:.1f}"
+    )
     injury = injury_exit(params, scoring)
     print(
         "WR injury exit, projected 16.7: "
@@ -395,6 +449,12 @@ def main() -> None:
         failures.append(f"Dean P(>=55)={dean['p55']:.5f} is still too fat")
     if dean["equity"] >= 0.15:
         failures.append(f"Dean equity ${dean['equity']:.3f} is not cents")
+    if not 70 <= yards["rush_yards"] <= 75 or not 22 <= yards["rec_yards"] <= 24:
+        failures.append(
+            f"Yard repair rush={yards['rush_yards']:.1f} rec={yards['rec_yards']:.1f}"
+        )
+    if yards["p99"] > 80:
+        failures.append(f"Repaired RB p99={yards['p99']:.1f} is still a thousand-yard tail")
     if not 15.2 <= injury["mean"] <= 16.5:
         failures.append(f"Injury mean {injury['mean']:.2f} is off the 3% discount")
     if not 0.0005 <= injury["p_near_zero"] <= 0.02:

@@ -19,6 +19,7 @@ from revalidate import ping_revalidate
 from score_model import (
     load_params,
     load_week_lines,
+    sanitize_breakdown,
     scoring_from_league,
     simulate_team_scores,
 )
@@ -72,7 +73,7 @@ def _breakdown(player) -> dict:
             continue
         if number:
             out[str(key)] = number
-    return out
+    return sanitize_breakdown(out)
 
 
 def _mode(player) -> str:

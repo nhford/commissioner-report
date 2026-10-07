@@ -118,6 +118,13 @@ DST_COUNTS = (
 )
 
 SKILL_YARDS = ("passingYards", "rushingYards", "receivingYards")
+# Above a single-game NFL record. A weekly projection past these is a bad
+# feed, usually yards divided by a tiny games-played value.
+YARD_CAP = {
+    "passingYards": 600.0,
+    "rushingYards": 350.0,
+    "receivingYards": 400.0,
+}
 SKILL_COUNTS = ("receivingReceptions", "rushingAttempts", "receivingTargets", "lostFumbles", "passingInterceptions")
 
 DEFAULT_CV = {
@@ -455,6 +462,70 @@ def play_fraction(
     return np.minimum(1.0, exit_play / snaps)
 
 
+def _games_played(breakdown: dict) -> float | None:
+    """ESPN stat 210. A normal weekly projection has this at 1."""
+    for key in ("gamesPlayed", "210"):
+        if key not in breakdown:
+            continue
+        try:
+            games = float(breakdown[key])
+        except (TypeError, ValueError):
+            continue
+        if 0 < games <= 1:
+            return games
+    return None
+
+
+def _yards_from_rate(breakdown: dict, stat: str) -> float | None:
+    if stat == "rushingYards":
+        volume = float(breakdown.get("rushingAttempts") or 0)
+        rate = float(breakdown.get("rushingYardsPerAttempt") or 0)
+    elif stat == "receivingYards":
+        volume = float(breakdown.get("receivingReceptions") or 0)
+        rate = float(breakdown.get("receivingYardsPerReception") or 0)
+    else:
+        volume = float(breakdown.get("passingAttempts") or 0)
+        rate = float(breakdown.get("passingYardsPerAttempt") or 0)
+    if volume <= 0 or rate <= 0:
+        return None
+    return volume * rate
+
+
+def sanitize_breakdown(breakdown: dict | None) -> dict:
+    """Drop or rescale yardage that cannot be one game.
+
+    ESPN occasionally stores yards / gamesPlayed when gamesPlayed is near
+    zero, so a 72-yard projection arrives as 7,000. Multiplying back by
+    games played repairs that. Attempts times yards-per-attempt is the
+    backup. Anything still past a single-game record is removed, and the
+    fantasy projection stays the center of the score.
+    """
+    if not breakdown:
+        return {}
+    out = dict(breakdown)
+    games = _games_played(out)
+    for stat, cap in YARD_CAP.items():
+        try:
+            value = float(out.get(stat) or 0)
+        except (TypeError, ValueError):
+            out.pop(stat, None)
+            continue
+        if value <= cap:
+            continue
+        repaired = None
+        if games is not None and 0 < value * games <= cap:
+            repaired = value * games
+        else:
+            rebuilt = _yards_from_rate(out, stat)
+            if rebuilt is not None and 0 < rebuilt <= cap:
+                repaired = rebuilt
+        if repaired is None:
+            out.pop(stat, None)
+        else:
+            out[stat] = repaired
+    return out
+
+
 def center(samples: np.ndarray, target: float) -> np.ndarray:
     samples = np.asarray(samples, dtype=float)
     if len(samples) == 0:
@@ -716,7 +787,7 @@ def simulate_team_scores(
     for index, player in enumerate(players):
         row = dict(player)
         row["index"] = index
-        row["breakdown"] = row.get("breakdown") or {}
+        row["breakdown"] = sanitize_breakdown(row.get("breakdown") or {})
         indexed.append(row)
 
     game_points = _draw_games(lines, params, n, rng)

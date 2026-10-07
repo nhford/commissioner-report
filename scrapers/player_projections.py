@@ -17,6 +17,7 @@ from espn_api.football.box_player import BoxPlayer
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from espn_client import get_league
 from logo_utils import owner_for
+from score_model import sanitize_breakdown
 from supabase_client import get_service_client
 
 FA_LIMIT = 50
@@ -37,7 +38,8 @@ def projected_breakdown(player, week: int) -> dict | None:
             continue
         if number:
             out[str(key)] = round(number, 4)
-    return out or None
+    cleaned = sanitize_breakdown(out)
+    return {key: round(float(value), 4) for key, value in cleaned.items()} or None
 
 
 def week_projection(player, week: int) -> float:
