@@ -138,7 +138,7 @@ export default function SuperlativesView({
           Nothing in this window yet. {currentSeason} fills in as weeks finish.
         </p>
       ) : (
-        <ul className="grid gap-3 md:grid-cols-2">
+        <ul className="grid gap-3 min-[90rem]:grid-cols-2">
           {visible.map(({ award, places }) => (
             <SuperlativeCard key={award.id} award={award} places={places} />
           ))}

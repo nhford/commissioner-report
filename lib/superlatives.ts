@@ -17,6 +17,8 @@ export type SuperlativeDetail = {
   partner_logo_path?: string | null;
   nfl_team?: string;
   owners?: string[];
+  seasons?: { season: number; amount: number }[];
+  lines?: { label: string; amount: number }[];
   winners?: { owner: string; logo_path?: string | null }[];
   starters?: {
     name?: string | null;
@@ -84,19 +86,19 @@ export const AWARDS: AwardDef[] = [
     id: "most_added",
     label: "Most added",
     group: "player",
-    hint: "Free-agent and waiver pickups. A move between league teams counts as a trade instead.",
+    hint: "Free-agent and waiver pickups, including a player another owner dropped.",
   },
   {
     id: "most_dropped",
     label: "Most dropped",
     group: "player",
-    hint: "Left every roster. A move onto another league team counts as a trade instead.",
+    hint: "Left a roster, including a player another owner then added.",
   },
   {
     id: "most_traded_player",
     label: "Most traded",
     group: "player",
-    hint: "Times he changed fantasy teams between weeks.",
+    hint: "Moved in a deal between league teams. A drop followed by a waiver or free-agent add counts as those instead.",
   },
   {
     id: "player_duo_starts",

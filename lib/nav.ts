@@ -20,6 +20,12 @@ const SECTIONS: Section[] = [
     blurb: "Career win-loss for every player rostered in this league.",
   },
   {
+    href: "/superlatives",
+    label: "Superlatives",
+    blurb: "All-time and current-season highs and lows for players and teams.",
+    soon: true,
+  },
+  {
     href: "/trade-o-gami",
     label: "Trade-o-gami",
     blurb: "Who trades with whom: a chord of completed deals between owners.",

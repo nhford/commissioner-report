@@ -1,5 +1,5 @@
 {
-  "note": "season_finish amounts are dollars for the ESPN final-standing champion (1) and runner-up (2) in 2022 and 2023. null means that prize has not been entered yet, so it is left out of earnings. weekly is the regular-season top-scorer prize; a tie splits the amount. 2024 is $50 and 2025–2026 are $75. A later season uses weekly.default.",
+  "note": "season_finish is the champion (1) and runner-up (2) prize, added on top of weekly top-scorer pay. A place left out means there was no prize. weekly is the regular-season top-scorer prize; a tie splits the amount. 2024 is $50 and 2025–2026 are $75. A later season uses weekly.default.",
   "weekly": {
     "2024": 50,
     "2025": 75,
@@ -7,7 +7,20 @@
     "default": 75
   },
   "season_finish": {
-    "2022": { "1": null, "2": null },
-    "2023": { "1": null, "2": null }
+    "2022": {
+      "1": { "owner": "Alex", "amount": 850 },
+      "2": { "owner": "Raymond", "amount": 150 }
+    },
+    "2023": {
+      "1": { "owner": "Ajay", "amount": 1000 },
+      "2": { "owner": "Sam", "amount": 200 }
+    },
+    "2024": {
+      "1": { "owner": "Keshav", "amount": 770 },
+      "2": { "owner": "Rikhav", "amount": 330 }
+    },
+    "2025": {
+      "1": { "owner": "Keshav", "amount": 1350 }
+    }
   }
 }

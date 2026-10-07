@@ -28,7 +28,14 @@ from player_records import (
     owner_name,
 )
 from revalidate import ping_revalidate
-from superlative_ranks import build_superlatives, self_test, usable_owner
+from recent_activity import fetch_all_topics, row_from_topic, write_activity
+from superlative_ranks import (
+    build_superlatives,
+    prize_amount,
+    prize_owner,
+    self_test,
+    usable_owner,
+)
 from supabase_client import get_service_client, upload_logo
 
 PROJECTION_MIN = 50
@@ -227,16 +234,28 @@ def draft_rows_from(league, year: int) -> list[dict]:
 
 def load_finishers(payouts: dict) -> dict[int, dict[int, str]]:
     finishers: dict[int, dict[int, str]] = {}
-    for year in sorted(int(value) for value in (payouts.get("season_finish") or {})):
-        league = get_league(year)
-        places: dict[int, str] = {}
-        for team in league.teams:
-            place = getattr(team, "final_standing", None)
-            if not place:
+    finishes = payouts.get("season_finish") or {}
+    for year in sorted(int(value) for value in finishes):
+        named: dict[int, str] = {}
+        need_lookup = False
+        recorded = finishes[str(year)] if str(year) in finishes else finishes.get(year) or {}
+        for place in (1, 2):
+            if prize_amount(recorded, place) is None:
                 continue
-            places[int(place)] = owner_name(year, getattr(team, "team_id", None))
-        finishers[year] = places
-        print(f"  {year} final: {places.get(1) or '—'} / {places.get(2) or '—'}")
+            owner = prize_owner(recorded, place)
+            if owner:
+                named[place] = owner
+            else:
+                need_lookup = True
+        if need_lookup:
+            league = get_league(year)
+            for team in league.teams:
+                place = getattr(team, "final_standing", None)
+                if not place or int(place) in named:
+                    continue
+                named[int(place)] = owner_name(year, getattr(team, "team_id", None))
+        finishers[year] = named
+        print(f"  {year} final: {named.get(1) or '—'} / {named.get(2) or '—'}")
     return finishers
 
 
@@ -521,6 +540,11 @@ def main() -> None:
         )
 
     print("Rankings")
+    if not args.ranks_only:
+        activity_league = get_league(current)
+        topics = fetch_all_topics(activity_league)
+        activity_rows = [row for topic in topics if (row := row_from_topic(activity_league, topic))]
+        write_activity(client, activity_league, activity_rows)
     finishers = load_finishers(payouts)
     logos = load_logos(client)
     player_weeks = [
@@ -554,6 +578,7 @@ def main() -> None:
         normalize_trade(row)
         for row in fetch_all(client, "trades", "season, owners", ["season", "id"])
     ]
+    activity = fetch_all(client, "league_activity", "season, actions", ["season", "id"])
     rows = build_superlatives(
         player_weeks,
         team_weeks,
@@ -563,6 +588,7 @@ def main() -> None:
         finishers,
         logos,
         current,
+        activity,
     )
     apply_photos(rows, ensure_photos(client, photo_targets(rows)))
     replace_rankings(client, rows)

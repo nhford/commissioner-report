@@ -50,13 +50,33 @@ def in_scope(season: int, scope: str) -> bool:
     return int(season) == int(scope)
 
 
-def prize_amount(places: dict | None, place: int):
+_ABSENT = object()
+
+
+def _prize_raw(places: dict | None, place: int):
     if not places:
-        return None
+        return _ABSENT
     if str(place) in places:
         return places[str(place)]
     if place in places:
         return places[place]
+    return _ABSENT
+
+
+def prize_amount(places: dict | None, place: int):
+    raw = _prize_raw(places, place)
+    if raw is _ABSENT or raw is None:
+        return None
+    if isinstance(raw, dict):
+        amount = raw.get("amount")
+        return None if amount is None else float(amount)
+    return float(raw)
+
+
+def prize_owner(places: dict | None, place: int) -> str | None:
+    raw = _prize_raw(places, place)
+    if isinstance(raw, dict):
+        return usable_owner(raw.get("owner"))
     return None
 
 
@@ -65,8 +85,10 @@ def prizes_missing(payouts: dict, scope: str) -> bool:
     for year, places in finishes.items():
         if scope != "all_time" and str(year) != str(scope):
             continue
-        for place in (1, 2):
-            if prize_amount(places, place) is None:
+        if not isinstance(places, dict):
+            continue
+        for raw in places.values():
+            if raw is None or (isinstance(raw, dict) and raw.get("amount") is None):
                 return True
     return False
 
@@ -195,32 +217,76 @@ def season_movements(season: int, week_rows: list[dict], draft_rows: list[dict])
         prev = rosters[week - 1]
         curr = rosters[week]
         played = present[week]
+        moved: list[tuple[int, int, int]] = []
         for pid, tid in curr.items():
             old = prev.get(pid)
-            kind = None
             if old is None:
-                kind = "add"
+                events.append(_move(season, pid, names, "add"))
             elif old != tid:
-                kind = "trade"
-            if kind:
-                events.append(
-                    {
-                        "season": season,
-                        "player_id": pid,
-                        "name": names.get(pid, str(pid)),
-                        "kind": kind,
-                    }
-                )
+                moved.append((pid, old, tid))
+        returning = {}
+        for _pid, old, tid in moved:
+            returning[(old, tid)] = returning.get((old, tid), 0) + 1
+        for pid, old, tid in moved:
+            # A drop and a later add land on different teams in the same
+            # snapshot. Count that as a trade only when a player comes back
+            # the other way. Seasons with an activity feed replace this.
+            if returning.get((tid, old)):
+                events.append(_move(season, pid, names, "trade"))
+            else:
+                events.append(_move(season, pid, names, "drop"))
+                events.append(_move(season, pid, names, "add"))
         for pid, old_tid in prev.items():
             if pid not in curr and old_tid in played:
-                events.append(
-                    {
-                        "season": season,
-                        "player_id": pid,
-                        "name": names.get(pid, str(pid)),
-                        "kind": "drop",
-                    }
-                )
+                events.append(_move(season, pid, names, "drop"))
+    return events
+
+
+def _move(season: int, pid: int, names: dict[int, str], kind: str) -> dict:
+    return {
+        "season": season,
+        "player_id": pid,
+        "name": names.get(pid, str(pid)),
+        "kind": kind,
+    }
+
+
+def activity_movements(rows: list[dict]) -> list[dict]:
+    """Adds, drops, and trades from the ESPN activity feed.
+
+    The feed names the player on a real trade, which a roster snapshot
+    cannot do when the player coming back was claimed off waivers first.
+    """
+    events = []
+    for row in rows:
+        season = int(row["season"])
+        traded: set[int] = set()
+        for action in row.get("actions") or []:
+            pid = action.get("player_id")
+            if pid is None:
+                continue
+            pid = int(pid)
+            name = action.get("player_name") or str(pid)
+            kind = action.get("action")
+            if kind in {"TRADE_SENT", "TRADE_RECEIVED"}:
+                if pid in traded:
+                    continue
+                traded.add(pid)
+                recorded = "trade"
+            elif kind in {"FA ADDED", "WAIVER ADDED"}:
+                recorded = "add"
+            elif kind == "DROPPED":
+                recorded = "drop"
+            else:
+                continue
+            events.append(
+                {
+                    "season": season,
+                    "player_id": pid,
+                    "name": name,
+                    "kind": recorded,
+                }
+            )
     return events
 
 
@@ -266,6 +332,7 @@ def most_fantasy_teams(rows: list[dict], scope: str) -> list[dict]:
     items = _player_items(counts, latest, "teams")
     for item in items:
         item["display"] = f"{int(item['value'])} team" if item["value"] == 1 else f"{int(item['value'])} teams"
+        item["detail"]["owners"] = sorted(owners.get(int(item["subject_key"]), []))
     return items
 
 
@@ -308,6 +375,7 @@ def lowest_starts(rows: list[dict], scope: str) -> list[dict]:
 
 def auction_totals(picks: list[dict], scope: str, players: dict | None = None) -> list[dict]:
     totals: dict[int, float] = {}
+    by_season: dict[int, dict[int, float]] = {}
     latest: dict[int, dict] = {}
     players = players or {}
     for pick in picks:
@@ -315,7 +383,10 @@ def auction_totals(picks: list[dict], scope: str, players: dict | None = None) -
         if not in_scope(season, scope):
             continue
         pid = int(pick["player_id"])
-        totals[pid] = totals.get(pid, 0) + float(pick.get("bid") or 0)
+        bid = float(pick.get("bid") or 0)
+        totals[pid] = totals.get(pid, 0) + bid
+        by_season.setdefault(pid, {})
+        by_season[pid][season] = by_season[pid].get(season, 0) + bid
         latest[pid] = {
             "player_id": pid,
             "name": pick.get("name") or str(pid),
@@ -339,6 +410,10 @@ def auction_totals(picks: list[dict], scope: str, players: dict | None = None) -
                     "player_name": info["name"],
                     "pos": info.get("pos") or known.get("pos"),
                     "nfl_team": known.get("nfl_team"),
+                    "seasons": [
+                        {"season": season, "amount": round(amount, 2)}
+                        for season, amount in sorted(by_season.get(pid, {}).items())
+                    ],
                 },
             }
         )
@@ -456,18 +531,25 @@ def total_earnings(
     current_season: int,
 ) -> list[dict]:
     totals: dict[str, float] = {}
+    lines: dict[str, list[dict]] = {}
     finishes = payouts.get("season_finish") or {}
-    for year, places in finishes.items():
+    for year in sorted(finishes, key=lambda value: int(value)):
+        places = finishes[year]
         season = int(year)
         if not in_scope(season, scope):
             continue
         placed = finishers.get(season) or finishers.get(year) or {}
         for place in (1, 2):
             amount = prize_amount(places, place)
-            owner = usable_owner(placed.get(place) or placed.get(str(place)))
+            owner = prize_owner(places, place) or usable_owner(
+                placed.get(place) or placed.get(str(place))
+            )
             if amount is None or not owner:
                 continue
             totals[owner] = totals.get(owner, 0) + float(amount)
+            label = f"{season} champion" if place == 1 else f"{season} runner-up"
+            lines.setdefault(owner, []).append({"label": label, "amount": round(float(amount), 2)})
+    weekly_totals: dict[str, float] = {}
     for (season, _week), winners in weekly_winners(rows, scope):
         rate = weekly_rate(payouts, season)
         if rate <= 0 or not winners:
@@ -477,6 +559,9 @@ def total_earnings(
             owner = usable_owner(row.get("owner"))
             if owner:
                 totals[owner] = totals.get(owner, 0) + share
+                weekly_totals[owner] = weekly_totals.get(owner, 0) + share
+    for owner, weekly in weekly_totals.items():
+        lines.setdefault(owner, []).append({"label": "Weekly pay", "amount": round(weekly, 2)})
     missing = prizes_missing(payouts, scope)
     items = []
     for owner, total in totals.items():
@@ -490,6 +575,7 @@ def total_earnings(
                 "detail": {
                     "logo_path": owner_logo(logos, current_season, owner, current_season),
                     "prizes_missing": missing,
+                    "lines": lines.get(owner, []),
                 },
             }
         )
@@ -883,12 +969,20 @@ def build_superlatives(
     finishers: dict,
     logos: dict,
     current_season: int,
+    activity: list[dict] | None = None,
 ) -> list[dict]:
     seasons = {int(row["season"]) for row in player_weeks}
     seasons.update(int(row["season"]) for row in draft_picks)
+    activity_by_season: dict[int, list[dict]] = {}
+    for row in activity or []:
+        activity_by_season.setdefault(int(row["season"]), []).append(row)
     events: list[dict] = []
     for season in sorted(seasons):
-        events.extend(season_movements(season, player_weeks, draft_picks))
+        recorded = activity_by_season.get(season)
+        if recorded:
+            events.extend(activity_movements(recorded))
+        else:
+            events.extend(season_movements(season, player_weeks, draft_picks))
     latest = _latest_player(player_weeks)
     scopes = ["all_time", str(current_season)]
     rows: list[dict] = []
@@ -1083,8 +1177,44 @@ def self_test() -> None:
     kinds = {(event["name"], event["kind"]) for event in events}
     assert ("Added", "add") in kinds
     assert ("Gone", "drop") in kinds
-    assert ("Stay", "trade") in kinds
-    assert ("Stay", "add") not in kinds
+    assert ("Stay", "drop") in kinds
+    assert ("Stay", "add") in kinds
+    assert ("Stay", "trade") not in kinds
+    swap = season_movements(
+        2024,
+        [
+            _pw(player_id=1, name="Stay", team_id=1, week=1),
+            _pw(player_id=4, name="Back", team_id=2, week=1),
+            _pw(player_id=1, name="Stay", team_id=2, week=2),
+            _pw(player_id=4, name="Back", team_id=1, week=2),
+        ],
+        [
+            {"season": 2024, "player_id": 1, "name": "Stay", "team_id": 1, "bid": 1},
+            {"season": 2024, "player_id": 4, "name": "Back", "team_id": 2, "bid": 1},
+        ],
+    )
+    assert {(event["name"], event["kind"]) for event in swap} == {
+        ("Stay", "trade"),
+        ("Back", "trade"),
+    }
+    logged = activity_movements(
+        [
+            {
+                "season": 2026,
+                "actions": [
+                    {"action": "DROPPED", "player_id": 1, "player_name": "Purdy"},
+                    {"action": "WAIVER ADDED", "player_id": 1, "player_name": "Purdy"},
+                    {"action": "TRADE_SENT", "player_id": 2, "player_name": "Murray"},
+                    {"action": "TRADE_RECEIVED", "player_id": 2, "player_name": "Murray"},
+                ],
+            }
+        ]
+    )
+    assert {(event["name"], event["kind"]) for event in logged} == {
+        ("Purdy", "drop"),
+        ("Purdy", "add"),
+        ("Murray", "trade"),
+    }
 
     gap = season_movements(
         2024,
@@ -1137,6 +1267,17 @@ def self_test() -> None:
     current = total_earnings(tied, payouts, {}, "2024", {}, 2024)
     assert next(item["value"] for item in current if item["subject_name"] == "Noah") == 25
     assert current[0]["detail"]["prizes_missing"] is False
+    named = total_earnings(
+        [],
+        {"weekly": {}, "season_finish": {"2025": {"1": {"owner": "Keshav", "amount": 1350}}}},
+        {},
+        "all_time",
+        {},
+        2026,
+    )
+    assert named[0]["subject_name"] == "Keshav" and named[0]["value"] == 1350
+    assert named[0]["detail"]["prizes_missing"] is False
+    assert named[0]["detail"]["lines"] == [{"label": "2025 champion", "amount": 1350.0}]
 
     weeks_only = team_week_extremes(
         [
