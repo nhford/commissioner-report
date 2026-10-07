@@ -30,7 +30,7 @@ const COLUMNS: Column<MedianStanding>[] = [
     sortValue: (row) => row.team,
     render: (row) => (
       <span className="flex min-w-0 items-center gap-2">
-        <TeamLogo src={logoPublicUrl(row.logo_path)} alt={row.team} />
+        <TeamLogo src={logoPublicUrl(row.logo_path)} alt={row.team} circle />
         <span className="truncate font-semibold">{row.team}</span>
       </span>
     ),
@@ -45,7 +45,7 @@ const COLUMNS: Column<MedianStanding>[] = [
   },
   {
     key: "projection",
-    label: "Proj",
+    label: "Projection",
     natural: "desc",
     numeric: true,
     sortValue: (row) => row.projection,
@@ -152,6 +152,7 @@ export default function MedianStandings({ rows }: Props) {
                     src={logoPublicUrl(row.logo_path)}
                     alt=""
                     size="sm"
+                    circle
                   />
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold leading-snug">{row.team}</p>

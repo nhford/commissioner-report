@@ -83,7 +83,7 @@ export default function MedianMondayView({ pulls, standings }: Props) {
         role="group"
         aria-label="Scoring model"
       >
-        {(["M1", "M2"] as const).map((id) => {
+        {(["M2", "M1"] as const).map((id) => {
           const active = dual && model === id;
           return (
             <button
