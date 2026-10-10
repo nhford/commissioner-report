@@ -15,15 +15,14 @@ const SECTIONS: Section[] = [
     blurb: "Chance to beat the league median and share of the top-scorer payout.",
   },
   {
-    href: "/player-records",
-    label: "Player Records",
-    blurb: "Career win-loss for every player rostered in this league.",
-  },
-  {
     href: "/superlatives",
     label: "Superlatives",
     blurb: "All-time and current-season highs and lows for players and teams.",
-    soon: true,
+  },
+  {
+    href: "/player-records",
+    label: "Player Records",
+    blurb: "Career win-loss for every player rostered in this league.",
   },
   {
     href: "/trade-o-gami",
@@ -54,6 +53,13 @@ const SECTIONS: Section[] = [
 export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Home" },
   ...SECTIONS.map(({ href, label, soon }) => ({ href, label, soon })),
+];
+
+/** Phone banner. Desktop uses the full sidebar list. */
+export const BANNER_ITEMS: NavItem[] = [
+  { href: "/", label: "Home" },
+  { href: "/median-monday", label: "Median Watch" },
+  { href: "/superlatives", label: "Superlatives" },
 ];
 
 export const HUB_CARDS = SECTIONS.map(({ href, label, blurb, soon }) => ({
