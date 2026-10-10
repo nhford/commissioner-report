@@ -1,5 +1,7 @@
 import league from "@/data/league.json";
 
+// Jack's full name is Jack Blatt. The site refers to him as Jack.
+
 function namesFromBlock(block: Record<string, string> | undefined) {
   if (!block) return [];
   return Object.values(block).filter((name) => name && name !== "N/A");

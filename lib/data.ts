@@ -222,7 +222,7 @@ export async function getTrades(): Promise<{
   return { report, trades };
 }
 
-export async function getSuperlatives(): Promise<{
+export async function getSuperlatives(scope: string): Promise<{
   report: ReportRow | null;
   rows: SuperlativeRow[];
 }> {
@@ -236,8 +236,8 @@ export async function getSuperlatives(): Promise<{
       .select(
         "category, scope, rank, subject_type, subject_key, subject_name, value, display, detail",
       )
+      .eq("scope", scope)
       .order("category")
-      .order("scope")
       .order("rank"),
   ]);
   if (rowsRes.error) {

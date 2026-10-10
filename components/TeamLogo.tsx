@@ -10,7 +10,7 @@ export default function TeamLogo({ src, alt, size = "md", circle = false }: Prop
     size === "sm"
       ? "h-6 w-6"
       : size === "lg"
-        ? "h-24 w-24"
+        ? "h-10 w-10 @min-[32rem]:h-24 @min-[32rem]:w-24"
         : "h-8 w-8 md:h-10 md:w-10";
   const shape = circle ? "rounded-full object-cover" : "object-contain";
   if (!src) {
@@ -18,7 +18,7 @@ export default function TeamLogo({ src, alt, size = "md", circle = false }: Prop
     return (
       <span
         aria-hidden
-        className={`${box} ${circle ? "rounded-full" : "rounded"} grid shrink-0 place-items-center bg-neutral-200 font-bold text-neutral-700 ${size === "lg" ? "text-2xl" : "text-xs"}`}
+        className={`${box} ${circle ? "rounded-full" : "rounded"} grid shrink-0 place-items-center bg-neutral-200 font-bold text-neutral-700 ${size === "lg" ? "text-sm @min-[32rem]:text-2xl" : "text-xs"}`}
       >
         {initial}
       </span>

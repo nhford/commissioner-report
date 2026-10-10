@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Footer from "./Footer";
-import { isActivePath, NAV_ITEMS } from "@/lib/nav";
+import { BANNER_ITEMS, isActivePath, NAV_ITEMS } from "@/lib/nav";
 
 type Props = {
   week?: number;
@@ -47,10 +47,10 @@ function NavLink({
     return (
       <Link
         href={href}
-        className={`block border-l-2 px-3 py-1.5 text-sm transition-colors ${
+        className={`block px-3 py-1.5 text-sm transition-colors ${
           active
-            ? "border-white bg-white/10 font-semibold text-white"
-            : "border-transparent text-white/70 hover:bg-white/5 hover:text-white hover:underline hover:underline-offset-2 hover:decoration-emerald-400"
+            ? "bg-white/10 font-semibold text-white"
+            : "text-white/70 hover:bg-white/5 hover:text-white hover:underline hover:underline-offset-2 hover:decoration-emerald-400"
         }`}
       >
         {label}
@@ -61,7 +61,7 @@ function NavLink({
   return (
     <Link
       href={href}
-      className={`shrink-0 px-2 py-1 text-sm whitespace-nowrap ${
+      className={`shrink-0 px-1.5 py-1 text-sm whitespace-nowrap ${
         active
           ? "font-semibold text-white underline underline-offset-4 decoration-emerald-400"
           : "text-white/70 hover:text-white hover:underline hover:underline-offset-2 hover:decoration-emerald-400"
@@ -106,22 +106,24 @@ export default function SiteChrome({ week, season, children }: Props) {
       </aside>
 
       <header className="md:hidden sticky top-0 z-20 border-b border-white/15 bg-neutral-800">
-        <div className="flex items-center gap-3 px-3 py-3">
-          <Link href="/" className="shrink-0">
+        <div className="flex items-center gap-3 px-3 pb-5 pt-3">
+          <Link href="/" className="relative shrink-0 self-start">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/favicon-dark.png"
               alt="Commissioner's Report"
               className="h-9 w-9 object-contain"
             />
-            <p className="text-[0.65rem] text-white/50">{issue}</p>
+            <p className="absolute left-0 top-9 mt-0.5 whitespace-nowrap text-[0.65rem] leading-none text-white/50">
+              {issue}
+            </p>
           </Link>
           <nav
             className="min-w-0 flex-1 overflow-x-auto"
             aria-label="Sections"
           >
             <div className="flex items-center gap-1">
-              {NAV_ITEMS.filter((item) => !item.soon).map((item) => (
+              {BANNER_ITEMS.map((item) => (
                 <NavLink
                   key={item.label}
                   {...item}
