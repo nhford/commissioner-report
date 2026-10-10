@@ -12,6 +12,7 @@ import {
   tileApplies,
   tileChecked,
   tileEmptiesLocally,
+  tileParams,
   type AwardDef,
   type DepartedPlace,
   type SuperlativeDetail,
@@ -428,7 +429,9 @@ function TileCheck({
       <input type="hidden" name="teams" value={filters.teams ? "1" : "0"} />
       <input type="hidden" name="dst" value={filters.hideDefense ? "1" : "0"} />
       <input type="hidden" name="latest" value={filters.sortLatest ? "1" : "0"} />
-      {TILE_FILTERS.filter((filter) => filter.param !== name).map((filter) => (
+      {tileParams()
+        .filter((filter) => filter.param !== name)
+        .map((filter) => (
         <input
           key={filter.param}
           type="hidden"

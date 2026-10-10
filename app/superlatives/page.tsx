@@ -25,6 +25,8 @@ export default async function SuperlativesPage({
     teams?: string | string[];
     dst?: string | string[];
     latest?: string | string[];
+    teamdst?: string | string[];
+    consolation?: string | string[];
     inactive?: string | string[];
     ajay?: string | string[];
     keshav?: string | string[];

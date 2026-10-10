@@ -44,6 +44,8 @@ export type SuperlativeDetail = {
   weeks?: { season: number; week: number; points?: number; projected?: number; bye?: boolean }[];
   prizes_missing?: boolean;
   team_name?: string | null;
+  consolation?: boolean;
+  boards?: Record<string, SuperlativeCandidate[]>;
   changed_season?: number;
   changed_week?: number;
   changed_from?: number;
@@ -99,57 +101,46 @@ export type AwardDef = {
 
 export const AWARDS: AwardDef[] = [
   {
-    id: "most_fantasy_teams",
-    label: "Most fantasy teams",
-    group: "player",
-    hint: "Distinct owners who rostered him.",
-    ownerHint: "Seasons he played a game on this roster. Bench weeks count, a bye does not, and ties break on games played.",
+    id: "highest_team_week",
+    label: "Highest team week",
+    group: "team",
+    hint: "Single-week score from 2022 on, including the winners bracket. Exclude D/ST leaves out the started defense, so this will not match the ESPN total. Exclude consolation leaves out weeks 15–17 for eliminated teams. The same team can hold more than one spot.",
   },
   {
-    id: "least_fantasy_teams",
-    label: "Least fantasy teams",
-    group: "player",
-    hint: "Most fantasy points from a player who was never rostered.",
+    id: "lowest_team_week",
+    label: "Lowest team week",
+    group: "team",
+    hint: "Single-week score from 2022 on, including the winners bracket. Exclude D/ST leaves out the started defense, so this will not match the ESPN total. Exclude consolation leaves out weeks 15–17 for eliminated teams. The same team can hold more than one spot.",
   },
   {
-    id: "lowest_start",
-    label: "Lowest started score",
-    group: "player",
-    hint: "Started weeks only. Defenses are left out. The same player can hold more than one spot.",
+    id: "highest_median",
+    label: "Highest median",
+    group: "team",
+    hint: "Regular-season week since 2024 when the top-half line was highest. In a 12-team week that is 6th place.",
   },
   {
-    id: "highest_start",
-    label: "Highest started score",
-    group: "player",
-    hint: "Started weeks only. Defenses are left out. The same player can hold more than one spot.",
+    id: "lowest_median",
+    label: "Lowest median",
+    group: "team",
+    hint: "Regular-season week since 2024 when the top-half line was lowest.",
   },
   {
-    id: "most_auction_dollars",
-    label: "Most auction dollars",
-    group: "player",
-    hint: "Sum of draft prices, including keeper prices ESPN reports.",
-    ownerHint: "Draft dollars this owner spent on him, including keeper prices.",
+    id: "total_earnings",
+    label: "Total earnings",
+    group: "team",
+    hint: "2022–2023 champion and runner-up prizes, plus weekly top-scorer pay from 2024 on.",
   },
   {
-    id: "most_added",
-    label: "Most added",
-    group: "player",
-    hint: "Free-agent and waiver pickups, including a player another owner dropped.",
-    ownerHint: "Times this owner added him.",
+    id: "payout_wins",
+    label: "Payout wins",
+    group: "team",
+    hint: "Regular-season weeks as the top scorer since 2024. A tie counts for both teams.",
   },
   {
-    id: "most_dropped",
-    label: "Most dropped",
-    group: "player",
-    hint: "Left a roster, including a player another owner then added.",
-    ownerHint: "Times this owner dropped him.",
-  },
-  {
-    id: "most_traded_player",
-    label: "Most traded",
-    group: "player",
-    hint: "Moved in a deal between league teams. A drop followed by a waiver or free-agent add counts as those instead.",
-    ownerHint: "Times this owner traded him.",
+    id: "lowest_payout",
+    label: "Lowest payout",
+    group: "team",
+    hint: "Regular-season week since 2024 when the top score was the smallest, so the weekly pot was easiest to win.",
   },
   {
     id: "player_duo_starts",
@@ -171,48 +162,6 @@ export const AWARDS: AwardDef[] = [
     group: "player",
     hint: "Consecutive rostered weeks scoring below his projection. A bye is skipped. A tie or a week off the roster ends it.",
     ownerHint: "Consecutive weeks on this roster scoring below his projection. A bye is skipped. A week on another team ends it.",
-  },
-  {
-    id: "lowest_team_week",
-    label: "Lowest team week",
-    group: "team",
-    hint: "Single-week score from 2024 on, including the winners bracket. The same team can hold more than one spot.",
-  },
-  {
-    id: "highest_team_week",
-    label: "Highest team week",
-    group: "team",
-    hint: "Single-week score from 2024 on, including the winners bracket. The same team can hold more than one spot.",
-  },
-  {
-    id: "highest_median",
-    label: "Highest median",
-    group: "team",
-    hint: "Regular-season week since 2024 when the top-half line was highest. In a 12-team week that is 6th place.",
-  },
-  {
-    id: "lowest_median",
-    label: "Lowest median",
-    group: "team",
-    hint: "Regular-season week since 2024 when the top-half line was lowest.",
-  },
-  {
-    id: "payout_wins",
-    label: "Payout wins",
-    group: "team",
-    hint: "Regular-season weeks as the top scorer since 2024. A tie counts for both teams.",
-  },
-  {
-    id: "lowest_payout",
-    label: "Lowest payout",
-    group: "team",
-    hint: "Regular-season week since 2024 when the top score was the smallest, so the weekly pot was easiest to win.",
-  },
-  {
-    id: "total_earnings",
-    label: "Total earnings",
-    group: "team",
-    hint: "2022–2023 champion and runner-up prizes, plus weekly top-scorer pay from 2024 on.",
   },
   {
     id: "median_streak",
@@ -262,6 +211,59 @@ export const AWARDS: AwardDef[] = [
     group: "team",
     hint: "NFL team with the most players started in this league in a single week. Hide D/ST leaves defenses out of that count.",
     ownerHint: "NFL team with the most players this owner started in a single week. Hide D/ST leaves defenses out of that count.",
+  },
+  {
+    id: "highest_start",
+    label: "Highest started score",
+    group: "player",
+    hint: "Started weeks only. Defenses are left out. The same player can hold more than one spot.",
+  },
+  {
+    id: "lowest_start",
+    label: "Lowest started score",
+    group: "player",
+    hint: "Started weeks only. Defenses are left out. The same player can hold more than one spot.",
+  },
+  {
+    id: "most_fantasy_teams",
+    label: "Most fantasy teams",
+    group: "player",
+    hint: "Distinct owners who rostered him.",
+    ownerHint: "Seasons he played a game on this roster. Bench weeks count, a bye does not, and ties break on games played.",
+  },
+  {
+    id: "least_fantasy_teams",
+    label: "Least fantasy teams",
+    group: "player",
+    hint: "Most fantasy points from a player who was never rostered.",
+  },
+  {
+    id: "most_auction_dollars",
+    label: "Most auction dollars",
+    group: "player",
+    hint: "Sum of draft prices, including keeper prices ESPN reports.",
+    ownerHint: "Draft dollars this owner spent on him, including keeper prices.",
+  },
+  {
+    id: "most_traded_player",
+    label: "Most traded",
+    group: "player",
+    hint: "Moved in a deal between league teams. A drop followed by a waiver or free-agent add counts as those instead.",
+    ownerHint: "Times this owner traded him.",
+  },
+  {
+    id: "most_added",
+    label: "Most added",
+    group: "player",
+    hint: "Free-agent and waiver pickups, including a player another owner dropped.",
+    ownerHint: "Times this owner added him.",
+  },
+  {
+    id: "most_dropped",
+    label: "Most dropped",
+    group: "player",
+    hint: "Left a roster, including a player another owner then added.",
+    ownerHint: "Times this owner dropped him.",
   },
 ];
 
@@ -344,7 +346,35 @@ export const TILE_FILTERS: TileFilter[] = [
     localTitle: "Keshav drops out",
     owner: "Keshav",
   },
+  ...(["highest_team_week", "lowest_team_week"] as const).flatMap((awardId) => [
+    {
+      awardId,
+      param: "teamdst",
+      label: "Exclude D/ST",
+      title: "Leaves out the started defense. Uncheck for the full score, including 2022 and 2023.",
+      owner: null,
+      defaultOn: true,
+    },
+    {
+      awardId,
+      param: "consolation",
+      label: "Exclude consolation",
+      title: "Leaves out weeks 15–17 for eliminated teams. Uncheck to let those games count.",
+      owner: null,
+      defaultOn: true,
+    },
+  ]),
 ];
+
+/** One entry per URL param. Highest and lowest team week share two of them. */
+export function tileParams() {
+  const seen = new Set<string>();
+  return TILE_FILTERS.filter((filter) => {
+    if (seen.has(filter.param)) return false;
+    seen.add(filter.param);
+    return true;
+  });
+}
 
 export function tileApplies(filter: TileFilter, owner: string | null) {
   if (!filter.owner) return true;
@@ -416,7 +446,7 @@ export function readFilters(
     players: flag(search.players, true),
     teams: flag(search.teams, true),
     hideDefense: flag(search.dst, true),
-    sortLatest: flag(search.latest, true),
+    sortLatest: flag(search.latest, false),
     tiles: Object.fromEntries(
       TILE_FILTERS.map((filter) => [
         filter.param,
@@ -448,7 +478,7 @@ export function filterHref(
   if (!players) params.set("players", "0");
   if (!teams) params.set("teams", "0");
   if (!hideDefense) params.set("dst", "0");
-  if (!sortLatest) params.set("latest", "0");
+  if (sortLatest) params.set("latest", "1");
   for (const filter of TILE_FILTERS) {
     const on = Boolean(tiles[filter.param]);
     if (filter.defaultOn) {
@@ -639,6 +669,43 @@ export function leastTeamRows(
     const { alternates: _alternates, ...detail } = row.detail;
     return { ...row, rank: index + 1, detail };
   });
+}
+
+function teamWeekBoardKey(excludeDst: boolean, excludeConsolation: boolean) {
+  if (excludeDst && excludeConsolation) return null;
+  if (!excludeDst && excludeConsolation) return "full_scores";
+  if (excludeDst && !excludeConsolation) return "with_consolation";
+  return "full_with_consolation";
+}
+
+/** Highest and lowest team week. The stored list excludes D/ST and consolation. */
+export function teamWeekRows(
+  rows: SuperlativeRow[],
+  excludeDst: boolean,
+  excludeConsolation: boolean,
+  limit = 10,
+) {
+  const ranked = [...rows].sort((left, right) => left.rank - right.rank);
+  const leader = ranked[0];
+  if (!leader) return [];
+  const stored = ranked.slice(0, limit).map((row, index) => {
+    const { boards: _boards, alternates: _alternates, ...detail } = row.detail;
+    return { ...row, rank: index + 1, detail };
+  });
+  const key = teamWeekBoardKey(excludeDst, excludeConsolation);
+  const board = key ? leader.detail.boards?.[key] : null;
+  if (!key || !board) return stored;
+  return board.slice(0, limit).map((alt, index) => ({
+    category: leader.category,
+    scope: leader.scope,
+    rank: index + 1,
+    subject_type: alt.subject_type,
+    subject_key: String(alt.subject_key),
+    subject_name: alt.subject_name,
+    value: Number(alt.value),
+    display: alt.display,
+    detail: alt.detail ?? {},
+  }));
 }
 
 export function podiumRows(

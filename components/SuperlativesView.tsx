@@ -13,6 +13,8 @@ import {
   podiumRows,
   scopeKey,
   starterRows,
+  teamWeekRows,
+  tileParams,
   tileApplies,
   tileEmptiesLocally,
   type DepartedPlace,
@@ -80,7 +82,7 @@ export default function SuperlativesView({
     !filters.players ||
     !filters.teams ||
     !filters.hideDefense ||
-    !filters.sortLatest;
+    filters.sortLatest;
   const [asOfSeason, asOfWeek] = boardAsOf(rows);
 
   const years = Array.from(
@@ -104,7 +106,13 @@ export default function SuperlativesView({
               : storedLeader?.detail.departed) ?? []
           : [];
       const places =
-        award.id === "least_fantasy_teams"
+        award.id === "highest_team_week" || award.id === "lowest_team_week"
+          ? teamWeekRows(
+              matching,
+              Boolean(filters.tiles.teamdst),
+              Boolean(filters.tiles.consolation),
+            )
+          : award.id === "least_fantasy_teams"
           ? leastTeamRows(matching, Boolean(filters.tiles.inactive), currentSeason, 10)
           : award.id === "team_duo_trades"
             ? duoTradeRows(
@@ -152,7 +160,7 @@ export default function SuperlativesView({
         <input type="hidden" name="teams" value={filters.teams ? "1" : "0"} />
         <input type="hidden" name="dst" value={filters.hideDefense ? "1" : "0"} />
         <input type="hidden" name="latest" value={filters.sortLatest ? "1" : "0"} />
-        {TILE_FILTERS.map((filter) => (
+        {tileParams().map((filter) => (
           <input
             key={filter.param}
             type="hidden"

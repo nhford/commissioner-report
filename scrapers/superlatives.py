@@ -43,6 +43,7 @@ PROJECTION_MIN = 50
 HEADSHOT_URL = "https://a.espncdn.com/i/headshots/nfl/players/full/{player_id}.png"
 FREE_AGENT_PAGE = 100
 FREE_AGENT_KEEP = 80
+LOSERS_CONSOLATION = "LOSERS_CONSOLATION_LADDER"
 _LINEUP_TOTALS = None
 
 
@@ -119,6 +120,26 @@ def player_row(year: int, week: int, player, team_id: int, owner: str, team_name
     }
 
 
+def started_defense_points(players: list[dict]) -> float:
+    total = 0.0
+    for row in players:
+        if not row.get("started"):
+            continue
+        pos = row.get("pos")
+        name = row.get("name") or ""
+        if pos in {"D/ST", "DST"} or "D/ST" in name:
+            total += float(row.get("points") or 0)
+    return round(total, 2)
+
+
+def keeps_matchup(kind: str, home_id: int | None, away_id: int | None) -> bool:
+    if home_id is None or away_id is None:
+        return False
+    if kind == LOSERS_CONSOLATION:
+        return True
+    return counts_toward_record(kind, home_id, away_id)
+
+
 def side_rows(year: int, week: int, box, side: str, slots: dict, is_regular: bool) -> tuple[list[dict], dict | None, float]:
     team = getattr(box, f"{side}_team")
     lineup = list(getattr(box, f"{side}_lineup") or [])
@@ -157,6 +178,8 @@ def side_rows(year: int, week: int, box, side: str, slots: dict, is_regular: boo
         "projection_lineup_points": projection_points,
         "anti_projection_starts": anti,
         "projections_ok": False,
+        "is_consolation": False,
+        "dst_points": started_defense_points(players),
     }
     return players, team_row, projected_mass
 
@@ -182,26 +205,35 @@ def scrape_season(league, year: int, current_season: int) -> tuple[list[dict], l
             kind = matchup_type(box)
             home_id = box_team_id(box.home_team)
             away_id = box_team_id(box.away_team)
-            if not counts_toward_record(kind, home_id, away_id):
+            if not keeps_matchup(kind, home_id, away_id):
                 continue
+            is_consolation = kind == LOSERS_CONSOLATION
             is_regular = kind in REGULAR_TYPES
             home_owner = owner_name(year, home_id) if home_id else None
             away_owner = owner_name(year, away_id) if away_id else None
             for side in ("home", "away"):
                 players, team_row, mass = side_rows(year, week, box, side, slots, is_regular)
-                projected_mass += mass
-                for row in players:
-                    week_players[row["player_id"]] = row
                 if team_row:
+                    team_row["is_consolation"] = is_consolation
                     other = away_owner if side == "home" else home_owner
                     team_row["opponent_owner"] = usable_owner(other)
                     week_teams[team_row["team_id"]] = team_row
+                if is_consolation:
+                    continue
+                projected_mass += mass
+                for row in players:
+                    week_players[row["player_id"]] = row
         if not week_teams:
             continue
         projections_ok = projected_mass >= PROJECTION_MIN
         if not projections_ok:
             print(f"  {year} week {week}: projections ignored ({projected_mass:.0f} projected points)")
         for row in week_teams.values():
+            if row.get("is_consolation"):
+                row["projections_ok"] = False
+                row["projection_lineup_points"] = None
+                row["anti_projection_starts"] = None
+                continue
             row["projections_ok"] = projections_ok
             if not projections_ok:
                 row["projection_lineup_points"] = None
@@ -380,9 +412,9 @@ def unrostered_season_points(league, year: int, rostered: set[int]) -> list[dict
     return kept[:FREE_AGENT_KEEP]
 
 
-def team_weeks_have_opponent(client) -> bool:
+def team_weeks_have_column(client, column: str) -> bool:
     try:
-        client.table("team_weeks").select("opponent_owner").limit(1).execute()
+        client.table("team_weeks").select(column).limit(1).execute()
     except Exception:
         return False
     return True
@@ -458,6 +490,8 @@ def normalize_team(row: dict) -> dict:
         "anti_projection_starts": None if anti is None else int(anti),
         "projections_ok": bool(row.get("projections_ok")),
         "opponent_owner": usable_owner(row.get("opponent_owner")),
+        "is_consolation": bool(row.get("is_consolation")),
+        "dst_points": normalize_number(row.get("dst_points")),
     }
 
 
@@ -638,9 +672,12 @@ def main() -> None:
     client = get_service_client()
     payouts = load_payouts()
     through_week = 0
-    store_opponent = team_weeks_have_opponent(client)
+    store_opponent = team_weeks_have_column(client, "opponent_owner")
+    store_consolation = team_weeks_have_column(client, "is_consolation")
     if years and not store_opponent:
         print("team_weeks.opponent_owner is missing. Apply supabase/migrations/20261009183000_team_week_opponent.sql so later recomputes keep opponents.")
+    if years and not store_consolation:
+        print("team_weeks.is_consolation is missing. Apply supabase/migrations/20261010120000_team_week_consolation.sql so losers-bracket weeks can be stored.")
     scraped_opponents: dict[tuple[int, int, int], str | None] = {}
     for year in years:
         print(f"Season {year}")
@@ -658,6 +695,11 @@ def main() -> None:
         if not store_opponent:
             for row in team_rows:
                 row.pop("opponent_owner", None)
+        if not store_consolation:
+            team_rows = [row for row in team_rows if not row.get("is_consolation")]
+            for row in team_rows:
+                row.pop("is_consolation", None)
+                row.pop("dst_points", None)
         write_season(client, year, player_rows, team_rows, draft_rows)
         print(
             f"  wrote {len(player_rows)} player-weeks, "
@@ -691,6 +733,8 @@ def main() -> None:
     )
     if store_opponent:
         team_columns += ", opponent_owner"
+    if store_consolation:
+        team_columns += ", is_consolation, dst_points"
     team_weeks = [
         normalize_team(row)
         for row in fetch_all(
