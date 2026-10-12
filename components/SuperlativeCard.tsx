@@ -140,6 +140,7 @@ type Props = {
   asOfWeek: number;
   leaving?: DepartedPlace[];
   filters?: SuperlativeFilters;
+  className?: string;
 };
 
 function Disclosure({
@@ -469,6 +470,7 @@ export default function SuperlativeCard({
   asOfWeek,
   leaving = [],
   filters,
+  className,
 }: Props) {
   const [adjustEarnings, setAdjustEarnings] = useState(false);
   const earningsAdjusted = award.id === "total_earnings" && adjustEarnings;
@@ -509,7 +511,7 @@ export default function SuperlativeCard({
   const leaderFresh = fresh(leader);
 
   return (
-    <li className="@container rounded-lg border border-white/20 bg-white/5 px-4 py-4">
+    <li className={`@container rounded-lg border border-white/20 bg-white/5 px-4 py-4${className ? ` ${className}` : ""}`}>
       <h2 className="text-lg font-semibold">{award.label}</h2>
       <p className="mt-1 text-sm text-white/55">
         {filters?.owner && award.ownerHint ? award.ownerHint : award.hint}

@@ -12,7 +12,10 @@ PAYOUT_START = 2024
 # Week-level median and payout awards start here. Team-week highs and lows do not.
 FORMAT_START = 2024
 TEAM_WEEK_AWARDS = {"lowest_team_week", "highest_team_week"}
+STRETCH_AWARDS = {"lowest_three_week", "highest_three_week"}
 TEAM_WEEK_VARIANTS = ("full_scores", "with_consolation", "full_with_consolation")
+# Team-week and 3-week stretch awards store the same filter boards.
+VARIANT_BOARDS = TEAM_WEEK_AWARDS | STRETCH_AWARDS
 
 
 def usable_owner(name) -> str | None:
@@ -125,6 +128,8 @@ OWNER_AWARDS = {
     "highest_start",
     "lowest_team_week",
     "highest_team_week",
+    "lowest_three_week",
+    "highest_three_week",
     "payout_wins",
     "total_earnings",
     "median_streak",
@@ -134,6 +139,7 @@ OWNER_AWARDS = {
     "lineup_efficiency",
     "anti_projection_starts",
     "team_duo_trades",
+    "closest_matchup",
 }
 
 HIDDEN_ON_OWNER = {
@@ -148,7 +154,7 @@ def _for_owner(category: str, items: list[dict], owner: str) -> list[dict] | Non
     """Rows for one team. None means this award stays the league-wide list."""
     if category not in OWNER_AWARDS:
         return None
-    if category == "team_duo_trades":
+    if category in {"team_duo_trades", "closest_matchup"}:
         kept = []
         for item in items:
             detail = item.get("detail") or {}
@@ -191,6 +197,17 @@ def _present_for_owner(category: str, item: dict) -> dict:
         if detail.get("consolation"):
             display = f"{display} · consolation"
         return {**item, "subject_name": week_text(season, week), "display": display}
+    if category in STRETCH_AWARDS:
+        label = span_text(
+            int(detail["start_season"]),
+            int(detail["start_week"]),
+            int(detail["end_season"]),
+            int(detail["end_week"]),
+        )
+        display = points_text(item["value"])
+        if detail.get("consolation"):
+            display = f"{display} · consolation"
+        return {**item, "subject_name": label, "display": display}
     return item
 
 
@@ -916,6 +933,169 @@ def team_week_extremes(
     return items
 
 
+def closest_matchups(
+    rows: list[dict],
+    scope: str,
+    logos: dict,
+    current_season: int,
+) -> list[dict]:
+    """Smallest gap between the two scores. Consolation games are left out."""
+    by_week: dict[tuple[int, int], dict[str, dict]] = {}
+    for row in rows:
+        if row.get("is_consolation"):
+            continue
+        season = int(row["season"])
+        if not in_scope(season, scope):
+            continue
+        owner = usable_owner(row.get("owner"))
+        opponent = usable_owner(row.get("opponent_owner"))
+        if not owner or not opponent or owner == opponent:
+            continue
+        by_week.setdefault((season, int(row["week"])), {})[owner] = row
+
+    items = []
+    seen: set[tuple] = set()
+    for (season, week), owners in by_week.items():
+        for owner, row in owners.items():
+            opponent = usable_owner(row.get("opponent_owner"))
+            if not opponent or opponent not in owners or opponent == owner:
+                continue
+            pair = tuple(sorted((owner, opponent)))
+            key = (season, week, pair)
+            if key in seen:
+                continue
+            seen.add(key)
+            other = owners[opponent]
+            owner_pts = r2(row["points"])
+            other_pts = r2(other["points"])
+            if owner_pts > other_pts or (owner_pts == other_pts and owner < opponent):
+                winner, winner_pts, loser, loser_pts = owner, owner_pts, opponent, other_pts
+            else:
+                winner, winner_pts, loser, loser_pts = opponent, other_pts, owner, owner_pts
+            margin = r2(abs(winner_pts - loser_pts))
+            items.append(
+                {
+                    "subject_type": "duo",
+                    "subject_key": f"{season}:{week}:{winner}|{loser}",
+                    "subject_name": f"{winner} & {loser}",
+                    "value": margin,
+                    "display": (
+                        f"{points_text(winner_pts)}–{points_text(loser_pts)} · "
+                        f"{points_text(margin)} · {week_text(season, week)}"
+                    ),
+                    "detail": {
+                        "season": season,
+                        "week": week,
+                        "player_name": winner,
+                        "partner_name": loser,
+                        "logo_path": owner_logo(logos, season, winner, current_season),
+                        "partner_logo_path": owner_logo(logos, season, loser, current_season),
+                        "opponent_owner": loser,
+                    },
+                }
+            )
+    items.sort(
+        key=lambda item: (
+            item["value"],
+            item["detail"]["season"],
+            item["detail"]["week"],
+            item["subject_name"],
+        )
+    )
+    return items
+
+
+def _stretch_display(points: float, start: dict, end: dict, consolation: bool) -> str:
+    label = span_text(
+        int(start["season"]),
+        int(start["week"]),
+        int(end["season"]),
+        int(end["week"]),
+    )
+    if consolation:
+        label = f"{label} consolation"
+    return f"{points_text(points)} · {label}"
+
+
+def team_week_stretches(
+    rows: list[dict],
+    scope: str,
+    logos: dict,
+    current_season: int,
+    lowest: bool,
+    defenses: dict[tuple[int, int, int], float] | None = None,
+    drop_dst: bool = True,
+    drop_consolation: bool = True,
+) -> list[dict]:
+    """Average of three successive included weeks. The window can cross a season.
+
+    A team-week is used once. The better run is kept, and any run that shares a week with it is left out.
+    """
+    defenses = defenses or {}
+    by_owner: dict[str, list[dict]] = {}
+    for row in rows:
+        if drop_consolation and row.get("is_consolation"):
+            continue
+        if not in_scope(int(row["season"]), scope):
+            continue
+        owner = usable_owner(row.get("owner"))
+        if not owner:
+            continue
+        by_owner.setdefault(owner, []).append(row)
+    items = []
+    for owner, owned in by_owner.items():
+        owned.sort(key=lambda row: (int(row["season"]), int(row["week"]), int(row["team_id"])))
+        for index in range(len(owned) - 2):
+            window = owned[index : index + 3]
+            start, end = window[0], window[-1]
+            start_season, start_week = int(start["season"]), int(start["week"])
+            end_season, end_week = int(end["season"]), int(end["week"])
+            points = r2(sum(_team_week_points(row, drop_dst, defenses) for row in window) / 3)
+            consolation = any(row.get("is_consolation") for row in window)
+            detail = {
+                "start_season": start_season,
+                "start_week": start_week,
+                "end_season": end_season,
+                "end_week": end_week,
+                "logo_path": owner_logo(logos, start_season, owner, current_season),
+                "weeks": [(int(row["season"]), int(row["week"])) for row in window],
+            }
+            if consolation:
+                detail["consolation"] = True
+            items.append(
+                {
+                    "subject_type": "team",
+                    "subject_key": f"{owner}:{start_season}:{start_week}",
+                    "subject_name": owner,
+                    "value": points,
+                    "display": _stretch_display(points, start, end, consolation),
+                    "detail": detail,
+                }
+            )
+    items.sort(
+        key=lambda item: (
+            item["value"] if lowest else -item["value"],
+            *_entry_age(item),
+            item["subject_name"],
+        )
+    )
+    return _without_shared_weeks(items)
+
+
+def _without_shared_weeks(items: list[dict]) -> list[dict]:
+    """Keep runs in rank order, dropping any that reuse a team-week already kept."""
+    used: set[tuple[str, int, int]] = set()
+    kept = []
+    for item in items:
+        detail = item["detail"]
+        keys = {(item["subject_name"], season, week) for season, week in detail.pop("weeks")}
+        if keys & used:
+            continue
+        used.update(keys)
+        kept.append(item)
+    return kept
+
+
 def weekly_winners(rows: list[dict], scope: str) -> list[tuple[tuple[int, int], list[dict]]]:
     groups: dict[tuple[int, int], list[dict]] = {}
     for row in rows:
@@ -1206,62 +1386,60 @@ def projection_streaks(rows: list[dict], scope: str, over: bool, owner: str | No
     return items
 
 
+def _streak_item(
+    owner: str,
+    run: list[dict],
+    latest: dict,
+    logos: dict,
+    current_season: int,
+) -> dict:
+    start_row, end_row = run[0], run[-1]
+    length = len(run)
+    start_season, start_week = int(start_row["season"]), int(start_row["week"])
+    end_season, end_week = int(end_row["season"]), int(end_row["week"])
+    active = end_season == int(latest["season"]) and end_week == int(latest["week"])
+    label = span_text(start_season, start_week, end_season, end_week)
+    noun = "week" if length == 1 else "weeks"
+    display = f"{length} {noun} · {label}"
+    if active:
+        display += " · active"
+    return {
+        "subject_type": "team",
+        "subject_key": f"{owner}:{start_season}:{start_week}",
+        "subject_name": owner,
+        "value": length,
+        "display": display,
+        "detail": {
+            "logo_path": owner_logo(logos, current_season, owner, current_season),
+            "start_season": start_season,
+            "start_week": start_week,
+            "end_season": end_season,
+            "end_week": end_week,
+            "active": active,
+        },
+    }
+
+
 def streaks(rows: list[dict], scope: str, logos: dict, current_season: int, above: bool) -> list[dict]:
+    """Every maximal run. A miss ends it. The same team can hold more than one spot."""
     by_owner, cutoffs = _regular_by_owner(rows, scope)
     items = []
     for owner, owned in by_owner.items():
-        best_len = 0
-        best_span = None
-        current = 0
-        start = None
+        latest = owned[-1]
+        run: list[dict] = []
         for row in owned:
             key = (int(row["season"]), int(row["week"]))
             hit = r2(row["points"]) >= cutoffs[key]
             if not above:
                 hit = not hit
             if hit:
-                if current == 0:
-                    start = row
-                current += 1
-                if current > best_len:
-                    best_len = current
-                    best_span = (start, row)
-            else:
-                current = 0
-        if not best_len or best_span is None:
-            continue
-        start_row, end_row = best_span
-        latest = owned[-1]
-        active = int(end_row["season"]) == int(latest["season"]) and int(end_row["week"]) == int(
-            latest["week"]
-        )
-        label = span_text(
-            int(start_row["season"]),
-            int(start_row["week"]),
-            int(end_row["season"]),
-            int(end_row["week"]),
-        )
-        noun = "week" if best_len == 1 else "weeks"
-        display = f"{best_len} {noun} · {label}"
-        if active:
-            display += " · active"
-        items.append(
-            {
-                "subject_type": "team",
-                "subject_key": owner,
-                "subject_name": owner,
-                "value": best_len,
-                "display": display,
-                "detail": {
-                    "logo_path": owner_logo(logos, current_season, owner, current_season),
-                    "start_season": int(start_row["season"]),
-                    "start_week": int(start_row["week"]),
-                    "end_season": int(end_row["season"]),
-                    "end_week": int(end_row["week"]),
-                    "active": active,
-                },
-            }
-        )
+                run.append(row)
+                continue
+            if run:
+                items.append(_streak_item(owner, run, latest, logos, current_season))
+                run = []
+        if run:
+            items.append(_streak_item(owner, run, latest, logos, current_season))
     items.sort(key=_rank_key)
     return items
 
@@ -1664,6 +1842,34 @@ def build_superlatives(
                     ),
                 },
             )
+        for category, lowest in (("lowest_three_week", True), ("highest_three_week", False)):
+            _store_team_weeks(
+                rows,
+                scope,
+                owners,
+                category,
+                {
+                    "default": team_week_stretches(
+                        team_weeks, scope, logos, current_season, lowest, defenses, True, True
+                    ),
+                    "full_scores": team_week_stretches(
+                        team_weeks, scope, logos, current_season, lowest, defenses, False, True
+                    ),
+                    "with_consolation": team_week_stretches(
+                        team_weeks, scope, logos, current_season, lowest, defenses, True, False
+                    ),
+                    "full_with_consolation": team_week_stretches(
+                        team_weeks, scope, logos, current_season, lowest, defenses, False, False
+                    ),
+                },
+            )
+        _store(
+            rows,
+            scope,
+            owners,
+            "closest_matchup",
+            closest_matchups(team_weeks, scope, logos, current_season),
+        )
         _store(rows, scope, owners, "highest_median", median_weeks(team_weeks, scope, logos, current_season, True))
         _store(rows, scope, owners, "lowest_median", median_weeks(team_weeks, scope, logos, current_season, False))
         _store(
@@ -1970,7 +2176,7 @@ def stamp_recency(final_rows: list[dict], snapshots: list[tuple[int, int, list[d
                 if key[0] == "least_fantasy_teams":
                     departed[slot] = _departed(prior, board)
                 previous[slot] = board
-            if key[0] in TEAM_WEEK_AWARDS:
+            if key[0] in VARIANT_BOARDS:
                 leader = next((row for row in group if int(row["rank"]) == 1), None)
                 nested = ((leader or {}).get("detail") or {}).get("boards") or {}
                 for name in TEAM_WEEK_VARIANTS:
@@ -2016,7 +2222,7 @@ def stamp_recency(final_rows: list[dict], snapshots: list[tuple[int, int, list[d
         for alt in detail.get("alternates") or []:
             alt_detail = alt.setdefault("detail", {})
             write(alt_detail, row["category"], row["scope"], alt["subject_key"])
-        if row["category"] in TEAM_WEEK_AWARDS:
+        if row["category"] in VARIANT_BOARDS:
             for name, board in (detail.get("boards") or {}).items():
                 board_when = board_last.get((row["category"], row["scope"], name))
                 for alt in board:
@@ -2438,6 +2644,105 @@ def self_test() -> None:
     assert presented["subject_name"] == "2022 Wk 16"
     assert "consolation" in presented["display"]
 
+    stretch_rows = [
+        _tw(owner="Noah", team_id=1, season=2024, week=14, points=100),
+        _tw(
+            owner="Noah",
+            team_id=1,
+            season=2024,
+            week=15,
+            points=10,
+            is_regular=False,
+            is_consolation=True,
+        ),
+        _tw(owner="Noah", team_id=1, season=2025, week=1, points=40),
+        _tw(owner="Noah", team_id=1, season=2025, week=2, points=30),
+        _tw(owner="Noah", team_id=1, season=2026, week=1, points=30),
+        _tw(owner="Noah", team_id=1, season=2026, week=2, points=30),
+        _tw(owner="Noah", team_id=1, season=2026, week=3, points=30),
+        _tw(owner="Liam", team_id=2, season=2024, week=14, points=50),
+        _tw(owner="Liam", team_id=2, season=2024, week=15, points=50, is_regular=False),
+        _tw(owner="Liam", team_id=2, season=2025, week=1, points=50),
+        _tw(owner="Liam", team_id=2, season=2025, week=2, points=50),
+    ]
+    high_stretch = team_week_stretches(stretch_rows, "all_time", {}, 2026, False, {}, True, True)
+    assert high_stretch[0]["subject_name"] == "Noah" and high_stretch[0]["value"] == 56.67
+    assert high_stretch[0]["subject_key"] == "Noah:2024:14"
+    assert high_stretch[0]["detail"]["end_season"] == 2025 and high_stretch[0]["detail"]["end_week"] == 2
+    assert "2024 Wk 14–2025 Wk 2" in high_stretch[0]["display"]
+    assert "weeks" not in high_stretch[0]["detail"]
+    liam_stretch = [item for item in high_stretch if item["subject_name"] == "Liam"]
+    assert [item["subject_key"] for item in liam_stretch] == ["Liam:2024:14"]
+    assert [item["subject_key"] for item in high_stretch if item["subject_name"] == "Noah"] == [
+        "Noah:2024:14",
+        "Noah:2026:1",
+    ]
+    low_stretch = team_week_stretches(stretch_rows, "all_time", {}, 2026, True, {}, True, True)
+    assert low_stretch[0]["subject_key"] == "Noah:2025:2" and low_stretch[0]["value"] == 30
+    assert all(item["subject_key"] != "Noah:2026:1" for item in low_stretch)
+    with_stretch = team_week_stretches(stretch_rows, "all_time", {}, 2026, False, {}, True, False)
+    noah_stretch = [item for item in with_stretch if item["subject_name"] == "Noah"]
+    assert noah_stretch[0]["value"] == 50
+    assert noah_stretch[0]["subject_key"] == "Noah:2024:14"
+    assert "consolation" in noah_stretch[0]["display"]
+    assert all(item["subject_key"] != "Noah:2024:15" for item in noah_stretch)
+    dst_stretch = [
+        _tw(owner="Noah", team_id=1, season=2024, week=1, points=100, dst_points=10),
+        _tw(owner="Noah", team_id=1, season=2024, week=2, points=100, dst_points=10),
+        _tw(owner="Noah", team_id=1, season=2024, week=3, points=100, dst_points=10),
+    ]
+    assert team_week_stretches(dst_stretch, "all_time", {}, 2026, False, {}, True, True)[0]["value"] == 90
+    assert team_week_stretches(dst_stretch, "all_time", {}, 2026, False, {}, False, True)[0]["value"] == 100
+    presented_stretch = _present_for_owner("highest_three_week", high_stretch[0])
+    assert presented_stretch["subject_name"] == "2024 Wk 14–2025 Wk 2"
+    assert presented_stretch["display"] == "56.67"
+
+    close_rows = [
+        _tw(owner="Noah", team_id=1, season=2024, week=7, points=112.4, opponent_owner="Liam"),
+        _tw(owner="Liam", team_id=2, season=2024, week=7, points=111.6, opponent_owner="Noah"),
+        _tw(owner="Noah", team_id=1, season=2024, week=2, points=150, opponent_owner="Sam"),
+        _tw(owner="Sam", team_id=3, season=2024, week=2, points=100, opponent_owner="Noah"),
+        _tw(
+            owner="Noah",
+            team_id=1,
+            season=2024,
+            week=16,
+            points=100.05,
+            opponent_owner="Liam",
+            is_regular=False,
+            is_consolation=True,
+        ),
+        _tw(
+            owner="Liam",
+            team_id=2,
+            season=2024,
+            week=16,
+            points=100,
+            opponent_owner="Noah",
+            is_regular=False,
+            is_consolation=True,
+        ),
+        _tw(owner="Dean", team_id=4, season=2024, week=3, points=90, opponent_owner="Ajay"),
+        _tw(owner="Ajay", team_id=5, season=2024, week=3, points=90, opponent_owner="Dean"),
+        _tw(owner="Noah", team_id=1, season=2024, week=15, points=80, opponent_owner="Liam", is_regular=False),
+        _tw(owner="Liam", team_id=2, season=2024, week=15, points=70, opponent_owner="Noah", is_regular=False),
+        _tw(owner="Noah", team_id=1, season=2022, week=1, points=40, opponent_owner="Liam"),
+        _tw(owner="Liam", team_id=2, season=2022, week=1, points=20, opponent_owner="Noah"),
+    ]
+    games = closest_matchups(close_rows, "all_time", {}, 2026)
+    assert [item["value"] for item in games] == [0, 0.8, 10, 20, 50]
+    assert games[0]["subject_name"] == "Ajay & Dean"
+    assert games[0]["display"] == "90–90 · 0 · 2024 Wk 3"
+    assert games[1]["subject_name"] == "Noah & Liam"
+    assert games[1]["display"] == "112.4–111.6 · 0.8 · 2024 Wk 7"
+    assert len(games) == len({item["subject_key"] for item in games})
+    assert all(item["detail"]["week"] != 16 for item in games)
+    stored_close: list[dict] = []
+    _store(stored_close, "all_time", ["Sam"], "closest_matchup", games)
+    sam_games = [row for row in stored_close if row["scope"] == "all_time@Sam"]
+    assert [row["subject_name"] for row in sam_games] == ["Noah & Sam"]
+    assert sam_games[0]["display"] == "150–100 · 50 · 2024 Wk 2"
+
     efficiency = rate_award(
         [
             _tw(owner="Noah", starter_points=10, optimal_points=10, points=10),
@@ -2533,6 +2838,34 @@ def self_test() -> None:
     ordered = streaks(tied_streaks, "all_time", {}, 2026, True)
     assert [item["subject_name"] for item in ordered[:2]] == ["Zoe", "Aaron"]
     assert ordered[0]["detail"]["start_season"] == 2024
+
+    split = []
+    for week, noah, liam in (
+        (1, 100, 10),
+        (2, 100, 10),
+        (3, 100, 10),
+        (4, 10, 100),
+        (5, 100, 10),
+        (6, 100, 10),
+    ):
+        split.append(_tw(owner="Noah", team_id=1, week=week, points=noah))
+        split.append(_tw(owner="Liam", team_id=2, week=week, points=liam))
+    makes = streaks(split, "all_time", {}, 2026, True)
+    assert [(item["subject_name"], item["value"]) for item in makes] == [
+        ("Noah", 3),
+        ("Noah", 2),
+        ("Liam", 1),
+    ]
+    assert makes[0]["subject_key"] == "Noah:2024:1"
+    assert makes[1]["subject_key"] == "Noah:2024:5"
+    assert makes[1]["detail"]["active"] is True
+    misses = streaks(split, "all_time", {}, 2026, False)
+    assert [(item["subject_name"], item["value"], item["subject_key"]) for item in misses] == [
+        ("Liam", 3, "Liam:2024:1"),
+        ("Liam", 2, "Liam:2024:5"),
+        ("Noah", 1, "Noah:2024:4"),
+    ]
+    assert misses[1]["detail"]["active"] is True
 
     same_count = nfl_starter_weeks(
         [

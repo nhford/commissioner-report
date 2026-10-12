@@ -104,13 +104,31 @@ export const AWARDS: AwardDef[] = [
     id: "highest_team_week",
     label: "Highest team week",
     group: "team",
-    hint: "Single-week score from 2022 on, including the winners bracket. Exclude D/ST leaves out the started defense, so this will not match the ESPN total. Exclude consolation leaves out weeks 15–17 for eliminated teams. The same team can hold more than one spot.",
+    hint: "Exclude D/ST leaves out the started defense, so this will not match the ESPN total. Exclude consolation leaves out weeks 15–17 for eliminated teams. Exclude 10-Team leaves out 2022 season.",
   },
   {
     id: "lowest_team_week",
     label: "Lowest team week",
     group: "team",
     hint: "Single-week score from 2022 on, including the winners bracket. Exclude D/ST leaves out the started defense, so this will not match the ESPN total. Exclude consolation leaves out weeks 15–17 for eliminated teams. The same team can hold more than one spot.",
+  },
+  {
+    id: "highest_three_week",
+    label: "Highest 3-week average",
+    group: "team",
+    hint: "A week is only counted once, so overlapping runs drop out.",
+  },
+  {
+    id: "lowest_three_week",
+    label: "Lowest 3-week average",
+    group: "team",
+    hint: "A week is only counted once, so overlapping runs drop out.",
+  },
+  {
+    id: "closest_matchup",
+    label: "Closest matchup",
+    group: "team",
+    hint: "Smallest gap between the two scores in a game since 2022, including the winners bracket. Winner listed first.",
   },
   {
     id: "highest_median",
@@ -167,13 +185,13 @@ export const AWARDS: AwardDef[] = [
     id: "median_streak",
     label: "Median streak",
     group: "team",
-    hint: "Regular-season weeks in a row in the top half. In 2022 that is the top 5. Playoff weeks are skipped and do not break it.",
+    hint: "Regular-season weeks in a row in the top half. In 2022 that is the top 5. Playoff weeks are skipped and do not break it. The same team can hold more than one spot.",
   },
   {
     id: "median_misses",
     label: "Median misses",
     group: "team",
-    hint: "Regular-season weeks in a row outside the top half. In 2022 that is outside the top 5. Playoff weeks are skipped.",
+    hint: "Regular-season weeks in a row outside the top half. In 2022 that is outside the top 5. Playoff weeks are skipped. The same team can hold more than one spot.",
   },
   {
     id: "team_duo_trades",
@@ -297,6 +315,8 @@ export const OWNER_AWARDS = new Set([
   "highest_start",
   "lowest_team_week",
   "highest_team_week",
+  "lowest_three_week",
+  "highest_three_week",
   "payout_wins",
   "total_earnings",
   "median_streak",
@@ -306,6 +326,7 @@ export const OWNER_AWARDS = new Set([
   "lineup_efficiency",
   "anti_projection_starts",
   "team_duo_trades",
+  "closest_matchup",
 ]);
 
 export type TileFilter = {
@@ -346,7 +367,7 @@ export const TILE_FILTERS: TileFilter[] = [
     localTitle: "Keshav drops out",
     owner: "Keshav",
   },
-  ...(["highest_team_week", "lowest_team_week"] as const).flatMap((awardId) => [
+  ...(["highest_team_week", "lowest_team_week", "highest_three_week", "lowest_three_week"] as const).flatMap((awardId) => [
     {
       awardId,
       param: "teamdst",
@@ -366,7 +387,7 @@ export const TILE_FILTERS: TileFilter[] = [
   ]),
 ];
 
-/** One entry per URL param. Highest and lowest team week share two of them. */
+/** One entry per URL param. Team-week and 3-week stretch awards share two of them. */
 export function tileParams() {
   const seen = new Set<string>();
   return TILE_FILTERS.filter((filter) => {

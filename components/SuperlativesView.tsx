@@ -106,7 +106,10 @@ export default function SuperlativesView({
               : storedLeader?.detail.departed) ?? []
           : [];
       const places =
-        award.id === "highest_team_week" || award.id === "lowest_team_week"
+        award.id === "highest_team_week" ||
+        award.id === "lowest_team_week" ||
+        award.id === "highest_three_week" ||
+        award.id === "lowest_three_week"
           ? teamWeekRows(
               matching,
               Boolean(filters.tiles.teamdst),
@@ -322,6 +325,11 @@ export default function SuperlativesView({
               asOfWeek={asOfWeek}
               leaving={leaving}
               filters={filters}
+              className={
+                !filters.sortLatest && award.id === "highest_median"
+                  ? "min-[90rem]:col-start-1"
+                  : undefined
+              }
             />
           ))}
         </ul>
