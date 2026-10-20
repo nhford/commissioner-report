@@ -140,6 +140,8 @@ OWNER_AWARDS = {
     "anti_projection_starts",
     "team_duo_trades",
     "closest_matchup",
+    "faab_precision",
+    "faab_win_pct",
 }
 
 HIDDEN_ON_OWNER = {
@@ -1742,6 +1744,100 @@ def lowest_payout_weeks(rows: list[dict], scope: str, logos: dict, current_seaso
     return items
 
 
+def _dollars(value) -> int:
+    return int(round(float(value or 0)))
+
+
+def required_bid(winning: int, other_bids: list[int]) -> int:
+    """Dollars that would still have won. A lone bid only had to be $1."""
+    if winning <= 0 and not other_bids:
+        return 0
+    if not other_bids:
+        return 1
+    second = max(other_bids)
+    if second >= winning:
+        return winning
+    return second + 1
+
+
+def _competitive_groups(rows: list[dict], scope: str) -> dict[tuple[int, int, int], list[dict]]:
+    groups: dict[tuple[int, int, int], list[dict]] = {}
+    for row in rows:
+        if row.get("result") == "conditional" or not in_scope(int(row["season"]), scope):
+            continue
+        key = (int(row["season"]), int(row["week"]), int(row["player_id"]))
+        groups.setdefault(key, []).append(row)
+    return groups
+
+
+def faab_precision(rows: list[dict], scope: str, logos: dict, current_season: int) -> list[dict]:
+    needed: dict[str, int] = {}
+    spent: dict[str, int] = {}
+    for bids in _competitive_groups(rows, scope).values():
+        winners = [row for row in bids if row.get("result") == "added"]
+        if len(winners) != 1:
+            continue
+        winner = winners[0]
+        owner = usable_owner(winner.get("owner"))
+        if not owner:
+            continue
+        bid = _dollars(winner.get("bid"))
+        others = [_dollars(row.get("bid")) for row in bids if row is not winner]
+        required = required_bid(bid, others)
+        if bid <= 0 and required <= 0:
+            continue
+        spent[owner] = spent.get(owner, 0) + bid
+        needed[owner] = needed.get(owner, 0) + required
+    items = []
+    for owner, total in spent.items():
+        if total <= 0:
+            continue
+        have = needed[owner]
+        pct = round(100 * have / total, 1)
+        items.append(
+            {
+                "subject_type": "team",
+                "subject_key": owner,
+                "subject_name": owner,
+                "value": pct,
+                "display": f"{pct:.1f}% · {money_text(have)} of {money_text(total)}",
+                "detail": {"logo_path": owner_logo(logos, current_season, owner, current_season)},
+            }
+        )
+    items.sort(key=_rank_key)
+    return items
+
+
+def faab_win_pct(rows: list[dict], scope: str, logos: dict, current_season: int) -> list[dict]:
+    counts: dict[str, list[int]] = {}
+    for row in rows:
+        if row.get("result") not in {"added", "lost"} or not in_scope(int(row["season"]), scope):
+            continue
+        owner = usable_owner(row.get("owner"))
+        if not owner:
+            continue
+        bucket = counts.setdefault(owner, [0, 0])
+        bucket[0 if row.get("result") == "added" else 1] += 1
+    items = []
+    for owner, (wins, losses) in counts.items():
+        total = wins + losses
+        if total <= 0:
+            continue
+        pct = round(100 * wins / total, 1)
+        items.append(
+            {
+                "subject_type": "team",
+                "subject_key": owner,
+                "subject_name": owner,
+                "value": pct,
+                "display": f"{pct:.1f}% · {wins} of {total}",
+                "detail": {"logo_path": owner_logo(logos, current_season, owner, current_season)},
+            }
+        )
+    items.sort(key=_rank_key)
+    return items
+
+
 def build_superlatives(
     player_weeks: list[dict],
     team_weeks: list[dict],
@@ -1754,6 +1850,7 @@ def build_superlatives(
     activity: list[dict] | None = None,
     free_agents: list[dict] | None = None,
     with_owners: bool = True,
+    waiver_bids: list[dict] | None = None,
 ) -> list[dict]:
     seasons = {int(row["season"]) for row in player_weeks}
     seasons.update(int(row["season"]) for row in draft_picks)
@@ -1954,6 +2051,20 @@ def build_superlatives(
             nfl_starter_weeks(player_weeks, scope),
             lambda owner, window=scope: nfl_starter_weeks(player_weeks, window, owner),
         )
+        _store(
+            rows,
+            scope,
+            owners,
+            "faab_precision",
+            faab_precision(waiver_bids or [], scope, logos, current_season),
+        )
+        _store(
+            rows,
+            scope,
+            owners,
+            "faab_win_pct",
+            faab_win_pct(waiver_bids or [], scope, logos, current_season),
+        )
     return rows
 
 
@@ -2093,7 +2204,7 @@ def _pool_values(rows: list[dict]) -> dict[str, float]:
     return {str(row["subject_key"]): r2(row["value"]) for row in _expanded_board(rows)}
 
 
-RATE_AWARDS = {"lineup_efficiency", "projection_beater"}
+RATE_AWARDS = {"lineup_efficiency", "projection_beater", "faab_precision", "faab_win_pct"}
 
 
 def _previous_rate(subject_key: str, prior: list[tuple], earlier: dict[str, float]) -> float | None:
@@ -2254,6 +2365,7 @@ def rankings_through(
     activity: list[dict] | None,
     free_agents: list[dict] | None,
     with_owners: bool = False,
+    waiver_bids: list[dict] | None = None,
 ) -> list[dict]:
     season_limit, week_limit = cutoff
     players = [row for row in player_weeks if _at_or_before(row["season"], row["week"], cutoff)]
@@ -2280,6 +2392,11 @@ def rankings_through(
         if activity_scoring_week(str(occurred), season) <= week_limit:
             kept_activity.append(row)
     agents = [row for row in free_agents or [] if int(row["season"]) <= season_limit]
+    kept_bids = [
+        row
+        for row in waiver_bids or []
+        if _at_or_before(row["season"], row["week"], cutoff)
+    ]
     return build_superlatives(
         players,
         teams,
@@ -2292,6 +2409,7 @@ def rankings_through(
         kept_activity,
         agents,
         with_owners,
+        kept_bids,
     )
 
 
@@ -2306,11 +2424,17 @@ def replay_recency(
     current_season: int,
     activity: list[dict] | None = None,
     free_agents: list[dict] | None = None,
+    waiver_bids: list[dict] | None = None,
 ) -> list[dict]:
     weeks = {
         (int(row["season"]), int(row["week"]))
         for row in list(player_weeks) + list(team_weeks)
     }
+    weeks.update(
+        (int(row["season"]), int(row["week"]))
+        for row in waiver_bids or []
+        if int(row["week"]) > 0
+    )
     ordered = sorted(weeks)
     if not ordered:
         return build_superlatives(
@@ -2324,6 +2448,7 @@ def replay_recency(
             current_season,
             activity,
             free_agents,
+            waiver_bids=waiver_bids,
         )
     snapshots = []
     built = []
@@ -2342,6 +2467,7 @@ def replay_recency(
             activity,
             free_agents,
             index == len(ordered) - 1,
+            waiver_bids,
         )
         snapshots.append((cutoff[0], cutoff[1], [row for row in built if "@" not in str(row["scope"])]))
     league_rows = [row for row in built if "@" not in str(row["scope"])]
@@ -3107,6 +3233,80 @@ def self_test() -> None:
         ],
     )
     assert hidden and all("@" not in row["scope"] for row in hidden)
+
+    def _bid(**kwargs) -> dict:
+        base = {
+            "season": 2024,
+            "week": 1,
+            "team_id": 1,
+            "owner": "Noah",
+            "player_id": 1,
+            "player_name": "A",
+            "bid": 27,
+            "result": "added",
+        }
+        base.update(kwargs)
+        return base
+
+    def _precision(rows: list[dict], owner: str = "Noah") -> dict:
+        found = faab_precision(rows, "all_time", {}, 2026)
+        return next(item for item in found if item["subject_name"] == owner)
+
+    tight = _precision([
+        _bid(),
+        _bid(owner="Liam", team_id=2, bid=26, result="lost"),
+    ])
+    assert tight["value"] == 100.0
+    assert tight["display"] == "100.0% · $27 of $27"
+
+    gap = _precision([
+        _bid(),
+        _bid(owner="Liam", team_id=2, bid=25, result="lost"),
+    ])
+    assert gap["value"] == round(100 * 26 / 27, 1)
+    assert "$26 of $27" in gap["display"]
+
+    alone = _precision([_bid()])
+    assert alone["value"] == round(100 * 1 / 27, 1)
+    assert "$1 of $27" in alone["display"]
+
+    tied = _precision([
+        _bid(),
+        _bid(owner="Liam", team_id=2, bid=27, result="lost"),
+    ])
+    assert tied["value"] == 100.0
+
+    summed = _precision([
+        _bid(),
+        _bid(owner="Liam", team_id=2, bid=26, result="lost"),
+        _bid(player_id=2, week=2, bid=10),
+    ])
+    assert summed["value"] == round(100 * 28 / 37, 1)
+    assert "$28 of $37" in summed["display"]
+
+    priced = _precision([
+        _bid(bid=10),
+        _bid(owner="Ajay", team_id=3, bid=50, result="conditional"),
+        _bid(owner="Liam", team_id=2, bid=5, result="lost"),
+    ])
+    assert priced["value"] == 60.0
+    assert "$6 of $10" in priced["display"]
+    assert faab_precision([_bid(bid=0)], "all_time", {}, 2026) == []
+
+    record = faab_win_pct(
+        [
+            _bid(result="added"),
+            _bid(player_id=2, week=2, result="lost"),
+            _bid(player_id=3, week=3, result="conditional"),
+        ],
+        "all_time",
+        {},
+        2026,
+    )
+    noah = next(item for item in record if item["subject_name"] == "Noah")
+    assert noah["value"] == 50.0
+    assert noah["display"] == "50.0% · 1 of 2"
+    assert _for_owner("faab_win_pct", record, "Noah") == record
 
     print("superlative ranks ok")
 

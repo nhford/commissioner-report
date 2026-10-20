@@ -218,6 +218,18 @@ export const AWARDS: AwardDef[] = [
     hint: "Starter points divided by the best possible lineup’s actual points. Weeks are summed first.",
   },
   {
+    id: "faab_precision",
+    label: "FAAB precision",
+    group: "team",
+    hint: "Share of waiver dollars that were required to win. Each win needs $1 more than the next processed bid, or $1 if nobody else bid. Claims that never processed are left out.",
+  },
+  {
+    id: "faab_win_pct",
+    label: "FAAB win %",
+    group: "team",
+    hint: "Winning waiver claims divided by claims ESPN actually processed. A later claim skipped because an earlier one already went through does not count. Losing a tie counts as a loss.",
+  },
+  {
     id: "anti_projection_starts",
     label: "Anti-projection starts",
     group: "team",
@@ -327,6 +339,8 @@ export const OWNER_AWARDS = new Set([
   "anti_projection_starts",
   "team_duo_trades",
   "closest_matchup",
+  "faab_precision",
+  "faab_win_pct",
 ]);
 
 export type TileFilter = {
@@ -525,7 +539,7 @@ export function isDefenseSubject(
   return /\bD\/ST\b/.test(name);
 }
 
-const RATE_AWARDS = new Set(["lineup_efficiency", "projection_beater"]);
+const RATE_AWARDS = new Set(["lineup_efficiency", "projection_beater", "faab_precision", "faab_win_pct"]);
 
 /** Movement since the previous week, for a percentage award that just changed. */
 export function rateChange(place: SuperlativeRow, hideDefense: boolean): string | null {

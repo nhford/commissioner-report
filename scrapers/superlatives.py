@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Weekly Superlatives backfill from ESPN box scores and drafts.
 
-Writes player_weeks, team_weeks, draft_picks, player headshots, and the
+Writes player_weeks, team_weeks, draft_picks, waiver_bids, player headshots, and the
 superlatives podium. Rankings are recomputed for all-time and the current
 season on every run. Use --full to rebuild every season from 2022.
 """
@@ -38,6 +38,8 @@ from superlative_ranks import (
     usable_owner,
 )
 from supabase_client import get_service_client, upload_logo
+from waiver_bids import fetch_waiver_bids
+from waiver_bids import self_test as waiver_self_test
 
 PROJECTION_MIN = 50
 HEADSHOT_URL = "https://a.espncdn.com/i/headshots/nfl/players/full/{player_id}.png"
@@ -441,6 +443,23 @@ def write_free_agents(client, year: int, rows: list[dict]) -> None:
     print(f"  wrote {len(rows)} unrostered season totals")
 
 
+def table_readable(client, table: str) -> bool:
+    try:
+        client.table(table).select("season").limit(1).execute()
+    except Exception:
+        return False
+    return True
+
+
+def write_waiver_bids(client, year: int, rows: list[dict]) -> None:
+    if not rows:
+        print(f"  {year}: no waiver bids returned; leaving stored rows in place")
+        return
+    delete_season(client, "waiver_bids", year)
+    insert_chunks(client, "waiver_bids", rows)
+    print(f"  wrote {len(rows)} waiver bids")
+
+
 def load_logos(client) -> dict[tuple[int, str], str]:
     rows = fetch_all(client, "fantasy_logos", "season, owner, logo_path", ["season", "team_id"])
     logos: dict[tuple[int, str], str] = {}
@@ -526,6 +545,20 @@ def normalize_trade(row: dict) -> dict:
         "season": int(row["season"]),
         "week": None if week is None else int(week),
         "owners": list(row.get("owners") or []),
+    }
+
+
+def normalize_bid(row: dict) -> dict:
+    return {
+        "season": int(row["season"]),
+        "id": str(row["id"]),
+        "week": int(row["week"]),
+        "team_id": int(row["team_id"]),
+        "owner": usable_owner(row.get("owner")),
+        "player_id": int(row["player_id"]),
+        "player_name": row.get("player_name"),
+        "bid": float(row.get("bid") or 0),
+        "result": row["result"],
     }
 
 
@@ -659,6 +692,7 @@ def main() -> None:
     args = parse_args()
     if args.self_test:
         self_test()
+        waiver_self_test()
         return
 
     current = season_id()
@@ -678,6 +712,10 @@ def main() -> None:
         print("team_weeks.opponent_owner is missing. Apply supabase/migrations/20261009183000_team_week_opponent.sql so later recomputes keep opponents.")
     if years and not store_consolation:
         print("team_weeks.is_consolation is missing. Apply supabase/migrations/20261010120000_team_week_consolation.sql so losers-bracket weeks can be stored.")
+    if not table_readable(client, "waiver_bids"):
+        raise SystemExit(
+            "waiver_bids is missing. Apply supabase/migrations/20261012180000_waiver_bids.sql"
+        )
     scraped_opponents: dict[tuple[int, int, int], str | None] = {}
     for year in years:
         print(f"Season {year}")
@@ -687,8 +725,11 @@ def main() -> None:
             through_week = last_week
         if last_week >= 1 and not team_rows:
             raise SystemExit(f"{year}: no completed weeks scraped; existing rows left in place")
+        through = int(getattr(league, "current_week", 1) or 1)
+        waiver_rows = fetch_waiver_bids(league, year, through)
         if last_week < 1:
             print("  no completed weeks")
+            write_waiver_bids(client, year, waiver_rows)
             continue
         for row in team_rows:
             scraped_opponents[(int(row["season"]), int(row["week"]), int(row["team_id"]))] = row.get("opponent_owner")
@@ -709,6 +750,7 @@ def main() -> None:
             league, year, rostered_ids(player_rows, draft_rows)
         )
         write_free_agents(client, year, free_rows)
+        write_waiver_bids(client, year, waiver_rows)
 
     print("Rankings")
     if not args.ranks_only:
@@ -770,6 +812,15 @@ def main() -> None:
             ["season", "player_id"],
         )
     ]
+    waiver_bids = [
+        normalize_bid(row)
+        for row in fetch_all(
+            client,
+            "waiver_bids",
+            "season, id, week, team_id, owner, player_id, player_name, bid, result",
+            ["season", "id"],
+        )
+    ]
     rows = replay_recency(
         player_weeks,
         team_weeks,
@@ -781,6 +832,7 @@ def main() -> None:
         current,
         activity,
         free_agents,
+        waiver_bids,
     )
     apply_photos(rows, ensure_photos(client, photo_targets(rows)))
     replace_rankings(client, rows)
