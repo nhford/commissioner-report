@@ -169,17 +169,31 @@ export const AWARDS: AwardDef[] = [
   },
   {
     id: "projection_over_streak",
-    label: "Overperforming projection",
+    label: "Overperforming projection streak",
     group: "player",
     hint: "Consecutive rostered weeks scoring above his projection. A bye is skipped. A tie or a week off the roster ends it.",
     ownerHint: "Consecutive weeks on this roster scoring above his projection. A bye is skipped. A week on another team ends it.",
   },
   {
     id: "projection_under_streak",
-    label: "Underperforming projection",
+    label: "Underperforming projection streak",
     group: "player",
     hint: "Consecutive rostered weeks scoring below his projection. A bye is skipped. A tie or a week off the roster ends it.",
     ownerHint: "Consecutive weeks on this roster scoring below his projection. A bye is skipped. A week on another team ends it.",
+  },
+  {
+    id: "projection_over_season",
+    label: "Overperforming projection",
+    group: "player",
+    hint: "Points minus that week's projection, added across rostered weeks with a projection above zero. A bye or any other week with no projection is left out. The line also shows that total per counted game.",
+    ownerHint: "Points minus that week's projection, added across weeks on this roster with a projection above zero. A bye or any other week with no projection is left out. The line also shows that total per counted game.",
+  },
+  {
+    id: "projection_under_season",
+    label: "Underperforming projection",
+    group: "player",
+    hint: "That week's projection minus the points scored, added across rostered weeks with a projection above zero. A bye or any other week with no projection is left out. The line shows points minus projection, and that gap per counted game.",
+    ownerHint: "That week's projection minus the points scored, added across weeks on this roster with a projection above zero. A bye or any other week with no projection is left out. The line shows points minus projection, and that gap per counted game.",
   },
   {
     id: "median_streak",

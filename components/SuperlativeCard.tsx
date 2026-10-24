@@ -249,6 +249,15 @@ function listedLines(
   );
 }
 
+function showsProjectionWeeks(awardId: string) {
+  return (
+    awardId === "projection_over_streak" ||
+    awardId === "projection_under_streak" ||
+    awardId === "projection_over_season" ||
+    awardId === "projection_under_season"
+  );
+}
+
 function hasDetail(awardId: string, place: SuperlativeRow) {
   const detail = place.detail;
   if (awardId === "most_fantasy_teams") {
@@ -258,7 +267,7 @@ function hasDetail(awardId: string, place: SuperlativeRow) {
   if (awardId === "most_auction_dollars") return (detail.seasons?.length ?? 0) > 0;
   if (awardId === "total_earnings") return (detail.lines?.length ?? 0) > 0;
   if (awardId === "nfl_starter_week") return (detail.starters?.length ?? 0) > 0;
-  if (awardId === "projection_over_streak" || awardId === "projection_under_streak") {
+  if (showsProjectionWeeks(awardId)) {
     return (detail.weeks?.length ?? 0) > 0;
   }
   return false;
@@ -338,8 +347,7 @@ function DetailBody({
                 ))}
               </ul>
             ) : null}
-            {(awardId === "projection_over_streak" || awardId === "projection_under_streak") &&
-            detail.weeks?.length ? (
+            {showsProjectionWeeks(awardId) && detail.weeks?.length ? (
               <ul className="mt-1 space-y-0.5">
                 {detail.weeks.map((week) => (
                   <li key={`${place.rank}-${week.season}-${week.week}`}>
