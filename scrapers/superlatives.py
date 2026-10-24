@@ -20,13 +20,23 @@ from espn_api.football.box_player import BoxPlayer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from espn_client import FIRST_SEASON, ROOT, get_league, season_id
+from nfl_teams import (
+    align_record_seasons,
+    correct_player_weeks,
+    correct_season_teams,
+    load_week_teams,
+)
+from nfl_teams import self_test as nfl_team_self_test
 from player_records import (
     REGULAR_TYPES,
     box_team_id,
     counts_toward_record,
     fantasy_team_name,
+    load_from_db,
     matchup_type,
     owner_name,
+    upsert_players,
+    write_seasons_storage,
 )
 from revalidate import ping_revalidate
 from recent_activity import fetch_all_topics, row_from_topic, write_activity
@@ -434,6 +444,50 @@ def write_season(client, year: int, player_rows: list[dict], team_rows: list[dic
         print(f"  {year}: no draft picks returned; leaving stored picks in place")
 
 
+def _upsert_batches(client, table: str, rows: list[dict], conflict: str) -> None:
+    for start in range(0, len(rows), 200):
+        client.table(table).upsert(rows[start : start + 200], on_conflict=conflict).execute()
+
+
+def persist_week_teams(client, changes: list[tuple[dict, str | None, str]]) -> None:
+    payload = []
+    for row, old, new in changes:
+        print(f"  {row['season']} Wk {row['week']} {row['name']}: {old} -> {new}")
+        payload.append(
+            {
+                "season": int(row["season"]),
+                "week": int(row["week"]),
+                "player_id": int(row["player_id"]),
+                "name": row["name"],
+                "pos": row.get("pos"),
+                "nfl_team": new,
+                "team_id": int(row["team_id"]),
+                "owner": row.get("owner"),
+                "started": bool(row.get("started")),
+                "points": row.get("points") or 0,
+                "projected_points": row.get("projected_points"),
+            }
+        )
+    _upsert_batches(client, "player_weeks", payload, "season,week,player_id")
+
+
+def persist_season_teams(client, changes: list[tuple[dict, str | None, str]]) -> None:
+    payload = []
+    for row, old, new in changes:
+        print(f"  {row['season']} {row['name']}: {old} -> {new}")
+        payload.append(
+            {
+                "season": int(row["season"]),
+                "player_id": int(row["player_id"]),
+                "name": row["name"],
+                "pos": row.get("pos"),
+                "nfl_team": new,
+                "points": row.get("points") or 0,
+            }
+        )
+    _upsert_batches(client, "free_agent_seasons", payload, "season,player_id")
+
+
 def write_free_agents(client, year: int, rows: list[dict]) -> None:
     if not rows:
         print(f"  {year}: no unrostered point totals; leaving stored rows in place")
@@ -693,6 +747,7 @@ def main() -> None:
     if args.self_test:
         self_test()
         waiver_self_test()
+        nfl_team_self_test()
         return
 
     current = season_id()
@@ -716,6 +771,8 @@ def main() -> None:
         raise SystemExit(
             "waiver_bids is missing. Apply supabase/migrations/20261012180000_waiver_bids.sql"
         )
+    print("NFL teams")
+    week_teams = load_week_teams(list(range(FIRST_SEASON, current + 1)))
     scraped_opponents: dict[tuple[int, int, int], str | None] = {}
     for year in years:
         print(f"Season {year}")
@@ -741,6 +798,9 @@ def main() -> None:
             for row in team_rows:
                 row.pop("is_consolation", None)
                 row.pop("dst_points", None)
+        week_fixes = correct_player_weeks(player_rows, week_teams)
+        if week_fixes:
+            print(f"  corrected {len(week_fixes)} NFL teams")
         write_season(client, year, player_rows, team_rows, draft_rows)
         print(
             f"  wrote {len(player_rows)} player-weeks, "
@@ -749,6 +809,7 @@ def main() -> None:
         free_rows = unrostered_season_points(
             league, year, rostered_ids(player_rows, draft_rows)
         )
+        correct_season_teams(free_rows, week_teams)
         write_free_agents(client, year, free_rows)
         write_waiver_bids(client, year, waiver_rows)
 
@@ -821,6 +882,23 @@ def main() -> None:
             ["season", "id"],
         )
     ]
+    print("Stale NFL teams")
+    week_fixes = correct_player_weeks(player_weeks, week_teams)
+    if week_fixes:
+        print(f"  {len(week_fixes)} player-weeks")
+        persist_week_teams(client, week_fixes)
+    else:
+        print("  player-weeks already match")
+    season_fixes = correct_season_teams(free_agents, week_teams)
+    if season_fixes:
+        print(f"  {len(season_fixes)} unrostered seasons")
+        persist_season_teams(client, season_fixes)
+    record_players, _through = load_from_db(client)
+    renamed = align_record_seasons(record_players, player_weeks)
+    if renamed:
+        print(f"  player records: {', '.join(renamed)}")
+        upsert_players(client, {name: record_players[name] for name in renamed})
+        write_seasons_storage(client, record_players)
     rows = replay_recency(
         player_weeks,
         team_weeks,

@@ -4,15 +4,19 @@ import { useState } from "react";
 import TeamLogo from "./TeamLogo";
 import { dollarText, earningsBoard } from "@/lib/inflation";
 import { logoPublicUrl, nflLogoUrl } from "@/lib/logos";
+import { ownersBetween } from "@/lib/owners";
 import {
+  ONE_OWNER_AWARDS,
   TILE_FILTERS,
   changedAt,
   isDefenseSubject,
+  ownerBoard,
   rateChange,
   tileApplies,
   tileChecked,
   tileEmptiesLocally,
   tileParams,
+  withZeroOwners,
   type AwardDef,
   type DepartedPlace,
   type SuperlativeDetail,
@@ -473,6 +477,7 @@ export default function SuperlativeCard({
   className,
 }: Props) {
   const [adjustEarnings, setAdjustEarnings] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const earningsAdjusted = award.id === "total_earnings" && adjustEarnings;
   const keshavFilter = TILE_FILTERS.find(
     (filter) => filter.param === "keshav" && filter.awardId === award.id,
@@ -484,10 +489,22 @@ export default function SuperlativeCard({
       tileApplies(keshavFilter, filters.owner) &&
       !tileEmptiesLocally(keshavFilter, filters.owner),
   );
-  const top =
+  const oneOwner = ONE_OWNER_AWARDS.has(award.id);
+  const ranked =
     award.id === "total_earnings"
       ? earningsBoard(places, adjustEarnings, keshavOn)
-      : places.slice(0, 10);
+      : oneOwner
+        ? ownerBoard(places)
+        : places;
+  const roster =
+    oneOwner && filters && !filters.owner
+      ? ownersBetween(filters.fromYear, filters.toYear).filter(
+          (name) => !(award.id === "total_earnings" && keshavOn && name === "Keshav"),
+        )
+      : [];
+  const full = withZeroOwners(ranked, roster, award.id);
+  const top = oneOwner && showAll ? full : full.slice(0, 10);
+  const canShowAll = oneOwner && full.length > 10;
   const tileFilters = filters
     ? TILE_FILTERS.filter(
         (filter) => filter.awardId === award.id && tileApplies(filter, filters.owner),
@@ -596,10 +613,23 @@ export default function SuperlativeCard({
             {leaderFresh ? <Delta text={rateChange(leader, hideDefense)} /> : null}
           </p>
         </div>
-        {showList || leaving.length ? (
-          <ol className="min-w-0 flex-1 space-y-0.5 text-[11px] leading-tight text-white/70 @min-[32rem]:space-y-1 @min-[32rem]:text-sm @min-[32rem]:leading-normal">
-            {listedLines(award.id, top, leaving, fresh, hideDefense)}
-          </ol>
+        {showList || leaving.length || canShowAll ? (
+          <div className="min-w-0 flex-1">
+            {showList || leaving.length ? (
+              <ol className="space-y-0.5 text-[11px] leading-tight text-white/70 @min-[32rem]:space-y-1 @min-[32rem]:text-sm @min-[32rem]:leading-normal">
+                {listedLines(award.id, top, leaving, fresh, hideDefense)}
+              </ol>
+            ) : null}
+            {canShowAll ? (
+              <button
+                type="button"
+                onClick={() => setShowAll((open) => !open)}
+                className="mt-2 min-h-9 w-fit cursor-pointer text-left text-sm text-white/80 underline decoration-white/30 underline-offset-2"
+              >
+                {showAll ? "Hide" : "Show all"}
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </div>
       {showDetails ? (

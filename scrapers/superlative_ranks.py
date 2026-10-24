@@ -35,6 +35,11 @@ def points_text(value: float) -> str:
     return text
 
 
+def score_text(value: float) -> str:
+    """Team scores stay at two decimals, including a whole number."""
+    return f"{float(value):.2f}"
+
+
 def money_text(amount: float) -> str:
     if abs(amount - round(amount)) < 0.001:
         return f"${amount:,.0f}"
@@ -122,6 +127,33 @@ def league_owner_names() -> list[str]:
     return sorted(names)
 
 
+def owners_in_scope(scope: str) -> list[str]:
+    """Owners who held a team during this window. all_time includes every season."""
+    bounds = scope_bounds(scope)
+    names: set[str] = set()
+    for year, block in _league_file().get("owners_by_year", {}).items():
+        season = int(year)
+        if bounds is not None and not (bounds[0] <= season <= bounds[1]):
+            continue
+        for name in (block or {}).values():
+            if name and name != "N/A":
+                names.add(str(name))
+    return sorted(names)
+
+
+# Show-all boards. An owner with no result still gets a zero row.
+ZERO_OWNER_DISPLAY = {
+    "total_earnings": "$0",
+    "payout_wins": "0 weeks",
+    "most_trades": "0 trades",
+    "anti_projection_starts": "0 starts",
+    "projection_beater": "0.0%",
+    "lineup_efficiency": "0.0%",
+    "faab_precision": "0.0% · $0 of $0",
+    "faab_win_pct": "0.0% · 0 of 0",
+}
+
+
 # Awards sliced from the league list. Other one-owner boards are ranked again.
 OWNER_AWARDS = {
     "lowest_start",
@@ -194,7 +226,7 @@ def _present_for_owner(category: str, item: dict) -> dict:
         season = int(detail["season"])
         week = int(detail["week"])
         opponent = detail.get("opponent_owner")
-        score = points_text(item["value"])
+        score = score_text(item["value"])
         display = f"{score} · vs {opponent}" if opponent else score
         if detail.get("consolation"):
             display = f"{display} · consolation"
@@ -206,11 +238,42 @@ def _present_for_owner(category: str, item: dict) -> dict:
             int(detail["end_season"]),
             int(detail["end_week"]),
         )
-        display = points_text(item["value"])
+        display = score_text(item["value"])
         if detail.get("consolation"):
             display = f"{display} · consolation"
         return {**item, "subject_name": label, "display": display}
     return item
+
+
+def with_zero_owners(category: str, scope: str, items: list[dict]) -> list[dict]:
+    """Append in-range owners who have no result, after the ranked rows."""
+    display = ZERO_OWNER_DISPLAY.get(category)
+    if not display:
+        return items
+    present = {item.get("subject_name") for item in items}
+    sample = (items[0].get("detail") or {}) if items else {}
+    missing = []
+    for owner in owners_in_scope(scope):
+        if owner in present:
+            continue
+        detail: dict = {}
+        if category == "total_earnings":
+            detail["prizes_missing"] = bool(sample.get("prizes_missing"))
+            detail["lines"] = []
+            detail["payments"] = []
+        missing.append(
+            {
+                "subject_type": "team",
+                "subject_key": owner,
+                "subject_name": owner,
+                "value": 0,
+                "display": display,
+                "detail": detail,
+            }
+        )
+    if not missing:
+        return items
+    return [*items, *missing]
 
 
 def _store(
@@ -221,6 +284,7 @@ def _store(
     items: list[dict],
     for_owner=None,
 ) -> None:
+    items = with_zero_owners(category, scope, items)
     rows.extend(emit(category, scope, items))
     if category in HIDDEN_ON_OWNER:
         return
@@ -356,6 +420,17 @@ def median_cutoff(scores: list[float]) -> float:
 
 def owner_logo(logos: dict, season: int, owner: str, fallback_season: int) -> str | None:
     return logos.get((season, owner)) or logos.get((fallback_season, owner))
+
+
+def latest_owner_logo(logos: dict, owner: str, current_season: int) -> str | None:
+    """Current-season logo, or the newest earlier season that has one."""
+    found = owner_logo(logos, current_season, owner, current_season)
+    if found:
+        return found
+    years = [year for (year, name) in logos if name == owner and year <= current_season]
+    if not years:
+        return None
+    return logos.get((max(years), owner))
 
 
 STORED = 10
@@ -873,7 +948,7 @@ def _team_week_display(points: float, season: int, week: int, consolation: bool)
     label = week_text(season, week)
     if consolation:
         label = f"{label} consolation"
-    return f"{points_text(points)} · {label}"
+    return f"{score_text(points)} · {label}"
 
 
 def team_week_extremes(
@@ -982,8 +1057,8 @@ def closest_matchups(
                     "subject_name": f"{winner} & {loser}",
                     "value": margin,
                     "display": (
-                        f"{points_text(winner_pts)}–{points_text(loser_pts)} · "
-                        f"{points_text(margin)} · {week_text(season, week)}"
+                        f"{score_text(winner_pts)}–{score_text(loser_pts)} · "
+                        f"{score_text(margin)} · {week_text(season, week)}"
                     ),
                     "detail": {
                         "season": season,
@@ -1016,7 +1091,7 @@ def _stretch_display(points: float, start: dict, end: dict, consolation: bool) -
     )
     if consolation:
         label = f"{label} consolation"
-    return f"{points_text(points)} · {label}"
+    return f"{score_text(points)} · {label}"
 
 
 def team_week_stretches(
@@ -1672,7 +1747,7 @@ def _week_item(season: int, week: int, score: float, names: list[str], detail: d
         "subject_key": f"{season}:{week}",
         "subject_name": week_text(season, week),
         "value": score,
-        "display": f"{points_text(score)} · {label}",
+        "display": f"{score_text(score)} · {label}",
         "detail": detail,
     }
 
@@ -1801,7 +1876,7 @@ def faab_precision(rows: list[dict], scope: str, logos: dict, current_season: in
                 "subject_name": owner,
                 "value": pct,
                 "display": f"{pct:.1f}% · {money_text(have)} of {money_text(total)}",
-                "detail": {"logo_path": owner_logo(logos, current_season, owner, current_season)},
+                "detail": {"logo_path": latest_owner_logo(logos, owner, current_season)},
             }
         )
     items.sort(key=_rank_key)
@@ -1831,7 +1906,7 @@ def faab_win_pct(rows: list[dict], scope: str, logos: dict, current_season: int)
                 "subject_name": owner,
                 "value": pct,
                 "display": f"{pct:.1f}% · {wins} of {total}",
-                "detail": {"logo_path": owner_logo(logos, current_season, owner, current_season)},
+                "detail": {"logo_path": latest_owner_logo(logos, owner, current_season)},
             }
         )
     items.sort(key=_rank_key)
@@ -2177,24 +2252,33 @@ def visible_board(rows: list[dict], hide_defense: bool, limit: int = 10) -> list
     ]
 
 
+STREAK_AWARDS = {"median_streak", "median_misses"}
+
+
 def board_changes(
     previous: list[tuple],
     current: list[tuple],
     include_entrants: bool = True,
+    compare_display: bool = False,
 ) -> set[str]:
     """Entries whose result changed, or that were not in the top 10 yet.
 
     A rank slide on an unchanged result is not included. The card still sorts
-    by the week the ordered top 10 last moved.
+    by the week the ordered top 10 last moved. Median streaks also count a
+    display change, so the week a run ends still bolds that line.
     """
     prev_value = {item[0]: item[1] for item in previous}
+    prev_display = {item[0]: item[3] if len(item) > 3 else "" for item in previous}
     changed = set()
     for item in current:
         key, value = item[0], item[1]
+        display = item[3] if len(item) > 3 else ""
         if key not in prev_value:
             if include_entrants:
                 changed.add(key)
         elif prev_value[key] != value:
+            changed.add(key)
+        elif compare_display and prev_display.get(key) != display:
             changed.add(key)
     return changed
 
@@ -2275,7 +2359,7 @@ def stamp_recency(final_rows: list[dict], snapshots: list[tuple[int, int, list[d
                 if board != prior:
                     board_last[slot] = as_of
                 entrants = key[0] != "least_fantasy_teams"
-                changed = board_changes(prior, board, entrants)
+                changed = board_changes(prior, board, entrants, key[0] in STREAK_AWARDS)
                 if prior and key[0] == "least_fantasy_teams":
                     changed.update(rising_entrants(prior, board, earlier))
                 for subject_key in changed:
@@ -2858,16 +2942,16 @@ def self_test() -> None:
     games = closest_matchups(close_rows, "all_time", {}, 2026)
     assert [item["value"] for item in games] == [0, 0.8, 10, 20, 50]
     assert games[0]["subject_name"] == "Ajay & Dean"
-    assert games[0]["display"] == "90–90 · 0 · 2024 Wk 3"
+    assert games[0]["display"] == "90.00–90.00 · 0.00 · 2024 Wk 3"
     assert games[1]["subject_name"] == "Noah & Liam"
-    assert games[1]["display"] == "112.4–111.6 · 0.8 · 2024 Wk 7"
+    assert games[1]["display"] == "112.40–111.60 · 0.80 · 2024 Wk 7"
     assert len(games) == len({item["subject_key"] for item in games})
     assert all(item["detail"]["week"] != 16 for item in games)
     stored_close: list[dict] = []
     _store(stored_close, "all_time", ["Sam"], "closest_matchup", games)
     sam_games = [row for row in stored_close if row["scope"] == "all_time@Sam"]
     assert [row["subject_name"] for row in sam_games] == ["Noah & Sam"]
-    assert sam_games[0]["display"] == "150–100 · 50 · 2024 Wk 2"
+    assert sam_games[0]["display"] == "150.00–100.00 · 50.00 · 2024 Wk 2"
 
     efficiency = rate_award(
         [
@@ -3046,6 +3130,40 @@ def self_test() -> None:
     assert week_two[1]["detail"]["changed_week"] == 5
     assert week_two[0]["detail"]["as_of_week"] == 5
     assert board_changes([("A", 2.0)], [("A", 2.0)]) == set()
+    assert board_changes(
+        [("Noah:2026:1", 3.0, "Noah", "3 weeks · 2026 Wk 1–3 · active")],
+        [("Noah:2026:1", 3.0, "Noah", "3 weeks · 2026 Wk 1–3")],
+        compare_display=True,
+    ) == {"Noah:2026:1"}
+    assert (
+        board_changes(
+            [("Noah:2026:1", 3.0, "Noah", "3 weeks · 2026 Wk 1–3")],
+            [("Noah:2026:1", 3.0, "Noah", "3 weeks · 2026 Wk 1–3")],
+            compare_display=True,
+        )
+        == set()
+    )
+
+    def _closed_streak(category: str, display: str) -> dict:
+        return {
+            "category": category,
+            "scope": "all_time",
+            "rank": 1,
+            "subject_key": "Noah:2026:1",
+            "subject_name": "Noah",
+            "value": 3,
+            "display": display,
+            "detail": {},
+            "subject_type": "team",
+        }
+
+    for category in ("median_streak", "median_misses"):
+        active_run = [_closed_streak(category, "3 weeks · 2026 Wk 1–3 · active")]
+        ended_run = [_closed_streak(category, "3 weeks · 2026 Wk 1–3")]
+        settled = [_closed_streak(category, "3 weeks · 2026 Wk 1–3")]
+        stamp_recency(settled, [(2026, 3, active_run), (2026, 4, ended_run), (2026, 5, settled)])
+        assert settled[0]["detail"]["changed_week"] == 4
+        assert settled[0]["detail"]["board_week"] == 4
 
     def _least(rank: int, key: str, name: str, value: float) -> dict:
         return {
@@ -3214,7 +3332,7 @@ def self_test() -> None:
         {"value": 80, "subject_name": "Noah", "detail": {"season": 2024, "week": 3, "opponent_owner": "Liam"}},
     )
     assert week["subject_name"] == "2024 Wk 3"
-    assert week["display"] == "80 · vs Liam"
+    assert week["display"] == "80.00 · vs Liam"
     hidden: list[dict] = []
     _store(
         hidden,
@@ -3307,6 +3425,82 @@ def self_test() -> None:
     assert noah["value"] == 50.0
     assert noah["display"] == "50.0% · 1 of 2"
     assert _for_owner("faab_win_pct", record, "Noah") == record
+
+    logos = {
+        (2026, "Noah"): "fantasy/2026/1.jpg",
+        (2025, "Noah"): "fantasy/2025/1.jpg",
+        (2024, "Liam"): "fantasy/2024/2.jpg",
+    }
+    marked = faab_precision(
+        [
+            _bid(),
+            _bid(owner="Liam", team_id=2, player_id=2, bid=5, result="added"),
+        ],
+        "all_time",
+        logos,
+        2026,
+    )
+    assert next(item["detail"]["logo_path"] for item in marked if item["subject_name"] == "Noah") == (
+        "fantasy/2026/1.jpg"
+    )
+    assert next(item["detail"]["logo_path"] for item in marked if item["subject_name"] == "Liam") == (
+        "fantasy/2024/2.jpg"
+    )
+    wins = faab_win_pct(
+        [_bid(), _bid(owner="Liam", team_id=2, bid=26, result="lost")],
+        "all_time",
+        {(2025, "Noah"): "fantasy/2025/1.jpg"},
+        2026,
+    )
+    assert next(item["detail"]["logo_path"] for item in wins if item["subject_name"] == "Noah") == (
+        "fantasy/2025/1.jpg"
+    )
+
+    zero_rows: list[dict] = []
+    _store(
+        zero_rows,
+        "2022-2026",
+        league_owner_names(),
+        "total_earnings",
+        [
+            {
+                "subject_type": "team",
+                "subject_key": "Noah",
+                "subject_name": "Noah",
+                "value": 10,
+                "display": "$10",
+                "detail": {
+                    "prizes_missing": True,
+                    "lines": [{"label": "2022 champion", "amount": 10}],
+                    "payments": [],
+                },
+            }
+        ],
+    )
+    league = [row for row in zero_rows if row["scope"] == "2022-2026"]
+    liam = next(
+        alt
+        for alt in league[0]["detail"]["alternates"]
+        if alt["subject_name"] == "Liam"
+    )
+    assert liam["value"] == 0
+    assert liam["display"] == "$0"
+    assert liam["detail"]["prizes_missing"] is True
+    assert liam["detail"]["lines"] == []
+    assert {row["subject_name"] for row in _expanded_board(league)} >= {"Liam", "Andoni"}
+    liam_only = [row for row in zero_rows if row["scope"] == "2022-2026@Liam"]
+    assert len(liam_only) == 1
+    assert liam_only[0]["display"] == "$0"
+    assert liam_only[0]["subject_name"] == "Liam"
+
+    season_rows: list[dict] = []
+    _store(season_rows, "2026-2026", [], "total_earnings", [])
+    season_names = {row["subject_name"] for row in _expanded_board(season_rows)}
+    assert "Liam" in season_names
+    assert "Andoni" not in season_names
+    assert "Kyler" not in season_names
+    assert "Jack" not in season_names
+    assert next(row["display"] for row in season_rows if row["subject_name"] == "Liam") == "$0"
 
     print("superlative ranks ok")
 

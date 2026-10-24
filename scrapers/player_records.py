@@ -16,10 +16,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from espn_client import FIRST_SEASON, ROOT, get_league, season_id
+from nfl_teams import WeekTeams, espn_abbrev, load_week_teams
 from revalidate import ping_revalidate
 from supabase_client import get_service_client, upload_logo
 
 MIN_STARTS = 30
+_OMIT_TEAM = object()
 WINNERS_BRACKET = "WINNERS_BRACKET"
 REGULAR_TYPES = {"NONE", ""}
 
@@ -46,21 +48,31 @@ def empty_player(name: str, pos: str) -> dict:
     }
 
 
-def remember_player(players: dict[str, dict], player) -> dict:
+def player_nfl_team(player, year: int, week: int, teams: WeekTeams | None) -> str | None:
+    """Week roster when ESPN's proTeam is a club he had not joined yet."""
+    player_id = getattr(player, "playerId", None)
+    if teams is not None and player_id is not None:
+        found = teams.for_week(int(player_id), year, week)
+        if found:
+            return found
+    return espn_abbrev(getattr(player, "proTeam", None))
+
+
+def remember_player(players: dict[str, dict], player, nfl_team=_OMIT_TEAM) -> dict:
     rec = players.get(player.name)
     if rec is None:
         rec = empty_player(player.name, player.position)
         players[player.name] = rec
     if player.position:
         rec["pos"] = player.position
-    team = player.proTeam
-    if team and team != "None" and (not rec["teams"] or rec["teams"][-1] != team):
+    team = espn_abbrev(getattr(player, "proTeam", None)) if nfl_team is _OMIT_TEAM else nfl_team
+    if team and (not rec["teams"] or rec["teams"][-1] != team):
         rec["teams"].append(team)
     return rec
 
 
 def update_player(players: dict[str, dict], player, outcome: int, playoff: bool) -> None:
-    rec = remember_player(players, player)
+    rec = remember_player(players, player, None)
     starter = player.lineupSlot not in ("IR", "BE")
     if playoff:
         rec["pg"] += 1
@@ -117,8 +129,9 @@ def record_appearance(
     owner: str,
     team_name: str,
     count_start: bool,
+    nfl_team: str | None = None,
 ) -> None:
-    rec = remember_player(players, player)
+    rec = remember_player(players, player, nfl_team)
     seasons = rec.setdefault("seasons", {})
     acc = seasons.get(year)
     if acc is None:
@@ -128,9 +141,8 @@ def record_appearance(
         pair = {"owner": owner, "team": team_name}
         if pair not in acc["fantasy"]:
             acc["fantasy"].append(pair)
-    nfl = player.proTeam
-    if nfl and nfl != "None" and (not acc["nfl"] or acc["nfl"][-1] != nfl):
-        acc["nfl"].append(nfl)
+    if nfl_team and (not acc["nfl"] or acc["nfl"][-1] != nfl_team):
+        acc["nfl"].append(nfl_team)
     if count_start and player.lineupSlot not in ("IR", "BE"):
         acc["gs"] += 1
         acc["starter_pts"] += float(getattr(player, "points", 0) or 0)
@@ -205,7 +217,7 @@ def add_roster(
     for player in lineup or []:
         names.add(player.name)
         if players is not None:
-            remember_player(players, player)
+            remember_player(players, player, None)
 
 
 def season_complete(league) -> bool:
@@ -236,6 +248,7 @@ def scrape_weeks(
     start_week: int,
     end_week: int,
     season_rosters: dict[int, set[str]] | None = None,
+    teams: WeekTeams | None = None,
 ) -> dict[int, set[str]]:
     league = get_league(year)
     rosters = season_rosters if season_rosters is not None else {}
@@ -254,9 +267,25 @@ def scrape_weeks(
             away_name = fantasy_team_name(box.away_team)
             count_start = counts_toward_record(kind, home_id, away_id)
             for player in box.home_lineup:
-                record_appearance(players, player, year, home_owner, home_name, count_start)
+                record_appearance(
+                    players,
+                    player,
+                    year,
+                    home_owner,
+                    home_name,
+                    count_start,
+                    player_nfl_team(player, year, week, teams),
+                )
             for player in box.away_lineup:
-                record_appearance(players, player, year, away_owner, away_name, count_start)
+                record_appearance(
+                    players,
+                    player,
+                    year,
+                    away_owner,
+                    away_name,
+                    count_start,
+                    player_nfl_team(player, year, week, teams),
+                )
             if not count_start:
                 continue
             if kind == WINNERS_BRACKET:
@@ -405,6 +434,8 @@ def main() -> None:
     args = parse_args()
     current = season_id()
     client = get_service_client()
+    print("NFL teams")
+    week_teams = load_week_teams(list(range(FIRST_SEASON, current + 1)))
 
     if args.full:
         players = {}
@@ -412,7 +443,7 @@ def main() -> None:
         for year in range(FIRST_SEASON, current + 1):
             print(f"Season {year}")
             league = get_league(year)
-            rosters = scrape_weeks(players, year, 1, league.current_week)
+            rosters = scrape_weeks(players, year, 1, league.current_week, teams=week_teams)
             if year < current or season_complete(league):
                 credit_titles(players, year, rosters)
                 titles_through = year
@@ -433,7 +464,7 @@ def main() -> None:
             league = get_league(year)
             week_from = start_week if year == start_year else 1
             print(f"Season {year} from week {week_from}")
-            rosters = scrape_weeks(players, year, week_from, league.current_week)
+            rosters = scrape_weeks(players, year, week_from, league.current_week, teams=week_teams)
             if titles_through < year and (year < current or season_complete(league)):
                 full_rosters = collect_rosters(year, 1, league.current_week)
                 credit_titles(players, year, full_rosters)
