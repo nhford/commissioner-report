@@ -35,6 +35,13 @@ def points_text(value: float) -> str:
     return text
 
 
+def signed_points(value: float) -> str:
+    text = points_text(value)
+    if text == "0" or text.startswith("-"):
+        return text
+    return f"+{text}"
+
+
 def money_text(amount: float) -> str:
     if abs(amount - round(amount)) < 0.001:
         return f"${amount:,.0f}"
@@ -1388,6 +1395,63 @@ def projection_streaks(rows: list[dict], scope: str, over: bool, owner: str | No
     return items
 
 
+def projection_surplus(rows: list[dict], scope: str, over: bool, owner: str | None = None) -> list[dict]:
+    """Total points above or below each week's projection.
+
+    A week with no projection, or a projection of zero, is left out. Rank is
+    the total, so a one-week spike cannot pass a smaller gap built over more
+    games. The line also shows that total per counted game.
+    """
+    by_player: dict[int, list[dict]] = {}
+    for row in rows:
+        if not in_scope(int(row["season"]), scope):
+            continue
+        if owner is not None and usable_owner(row.get("owner")) != owner:
+            continue
+        by_player.setdefault(int(row["player_id"]), []).append(row)
+    items = []
+    for pid, owned in by_player.items():
+        owned.sort(key=lambda row: (int(row["season"]), int(row["week"])))
+        weeks = []
+        for row in owned:
+            projected = row.get("projected_points")
+            if projected is None or float(projected) <= 0:
+                continue
+            points = r2(row["points"])
+            projected = r2(projected)
+            weeks.append(
+                {
+                    "season": int(row["season"]),
+                    "week": int(row["week"]),
+                    "points": points,
+                    "projected": projected,
+                }
+            )
+        if not weeks:
+            continue
+        surplus = r2(sum(week["points"] - week["projected"] for week in weeks))
+        average = r2(surplus / len(weeks))
+        info = owned[-1]
+        items.append(
+            {
+                "subject_type": "player",
+                "subject_key": str(pid),
+                "subject_name": info["name"],
+                "value": surplus if over else r2(-surplus),
+                "display": f"{signed_points(surplus)} · {signed_points(average)} /game",
+                "detail": {
+                    "player_id": pid,
+                    "player_name": info["name"],
+                    "pos": info.get("pos"),
+                    "nfl_team": info.get("nfl_team"),
+                    "weeks": weeks,
+                },
+            }
+        )
+    items.sort(key=_rank_key)
+    return items
+
+
 def _streak_item(
     owner: str,
     run: list[dict],
@@ -1992,6 +2056,22 @@ def build_superlatives(
             "projection_under_streak",
             projection_streaks(player_weeks, scope, False),
             lambda owner, window=scope: projection_streaks(player_weeks, window, False, owner),
+        )
+        _store(
+            rows,
+            scope,
+            owners,
+            "projection_over_season",
+            projection_surplus(player_weeks, scope, True),
+            lambda owner, window=scope: projection_surplus(player_weeks, window, True, owner),
+        )
+        _store(
+            rows,
+            scope,
+            owners,
+            "projection_under_season",
+            projection_surplus(player_weeks, scope, False),
+            lambda owner, window=scope: projection_surplus(player_weeks, window, False, owner),
         )
         _store(rows, scope, owners, "payout_wins", payout_wins(team_weeks, scope, logos, current_season))
         _store(rows, scope, owners, "lowest_payout", lowest_payout_weeks(team_weeks, scope, logos, current_season))
@@ -3203,6 +3283,40 @@ def self_test() -> None:
     ]
     assert projection_streaks(crossed, "2024-2024", True, "Noah")[0]["value"] == 2
     assert projection_streaks(crossed, "2024-2024", True)[0]["value"] == 4
+
+    surplus_rows = [
+        _pw(player_id=1, name="Steady", week=1, points=18, projected_points=8),
+        _pw(player_id=1, name="Steady", week=2, points=6, projected_points=8),
+        _pw(player_id=1, name="Steady", week=3, points=0, projected_points=0),
+        _pw(player_id=2, name="Spike", week=1, points=14, projected_points=8),
+        _pw(player_id=3, name="Cold", week=1, points=0, projected_points=10),
+        _pw(player_id=3, name="Cold", week=2, points=6, projected_points=8),
+    ]
+    season_over = projection_surplus(surplus_rows, "all_time", True)
+    steady = next(item for item in season_over if item["subject_name"] == "Steady")
+    spike = next(item for item in season_over if item["subject_name"] == "Spike")
+    assert steady["value"] == 8
+    assert steady["display"] == "+8 · +4 /game"
+    assert [week["week"] for week in steady["detail"]["weeks"]] == [1, 2]
+    assert spike["value"] == 6
+    assert season_over[0]["subject_name"] == "Steady"
+    assert season_over.index(spike) > season_over.index(steady)
+    season_under = projection_surplus(surplus_rows, "all_time", False)
+    cold = next(item for item in season_under if item["subject_name"] == "Cold")
+    assert cold["value"] == 12
+    assert cold["display"] == "-12 · -6 /game"
+    assert season_under[0]["subject_name"] == "Cold"
+    owned = projection_surplus(
+        [
+            _pw(player_id=1, name="Steady", owner="Noah", week=1, points=18, projected_points=8),
+            _pw(player_id=1, name="Steady", owner="Liam", week=2, points=6, projected_points=8),
+        ],
+        "2024-2024",
+        True,
+        "Noah",
+    )
+    assert owned[0]["value"] == 10
+    assert owned[0]["display"] == "+10 · +10 /game"
 
     start = _present_for_owner(
         "lowest_start",
