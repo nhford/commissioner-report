@@ -148,15 +148,12 @@ function withoutOwner(places: SuperlativeRow[], owner: string | null) {
   return places.filter((place) => !isOwner(place, owner));
 }
 
-/** Nominal top 10, optionally dropping one owner and moving the next owners up. */
+/** Every owner, optionally dropping one and moving the rest up. */
 export function nominalEarnings(places: SuperlativeRow[], hideOwner: string | null = null) {
-  if (!hideOwner) return places.slice(0, 10);
-  return withoutOwner(withExtras(places), hideOwner)
-    .slice(0, 10)
-    .map((row, index) => {
-      const { alternates: _alternates, ...detail } = row.detail;
-      return { ...row, rank: index + 1, detail };
-    });
+  return withoutOwner(withExtras(places), hideOwner).map((row, index) => {
+    const { alternates: _alternates, ...detail } = row.detail;
+    return { ...row, rank: index + 1, detail };
+  });
 }
 
 export function inflationRanked(places: SuperlativeRow[], hideOwner: string | null = null) {
@@ -189,7 +186,7 @@ export function inflationRanked(places: SuperlativeRow[], hideOwner: string | nu
     if (leftWeek !== rightWeek) return leftWeek - rightWeek;
     return left.subject_name.localeCompare(right.subject_name);
   });
-  return ranked.slice(0, 10).map((row, index) => ({ ...row, rank: index + 1 }));
+  return ranked.map((row, index) => ({ ...row, rank: index + 1 }));
 }
 
 export function earningsBoard(places: SuperlativeRow[], adjust: boolean, hideKeshav: boolean) {

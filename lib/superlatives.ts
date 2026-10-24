@@ -357,6 +357,18 @@ export const OWNER_AWARDS = new Set([
   "faab_win_pct",
 ]);
 
+/** One row per owner. The card can open the bench past the top 10. */
+export const ONE_OWNER_AWARDS = new Set([
+  "total_earnings",
+  "payout_wins",
+  "most_trades",
+  "projection_beater",
+  "lineup_efficiency",
+  "anti_projection_starts",
+  "faab_precision",
+  "faab_win_pct",
+]);
+
 export type TileFilter = {
   awardId: string;
   param: string;
@@ -755,6 +767,67 @@ export function teamWeekRows(
     display: alt.display,
     detail: alt.detail ?? {},
   }));
+}
+
+const ZERO_OWNER_DISPLAY: Record<string, string> = {
+  total_earnings: "$0",
+  payout_wins: "0 weeks",
+  most_trades: "0 trades",
+  anti_projection_starts: "0 starts",
+  projection_beater: "0.0%",
+  lineup_efficiency: "0.0%",
+  faab_precision: "0.0% · $0 of $0",
+  faab_win_pct: "0.0% · 0 of 0",
+};
+
+/** Owners from this year range who are missing, listed after the real results. */
+export function withZeroOwners(
+  places: SuperlativeRow[],
+  owners: string[],
+  awardId: string,
+) {
+  const display = ZERO_OWNER_DISPLAY[awardId];
+  if (!display || !places.length || !owners.length) return places;
+  const present = new Set(places.map((place) => place.subject_name));
+  const missing = owners.filter((name) => !present.has(name));
+  if (!missing.length) return places;
+  const leader = places[0];
+  const zeros = missing.map((name) => ({
+    category: leader.category,
+    scope: leader.scope,
+    rank: 0,
+    subject_type: "team",
+    subject_key: name,
+    subject_name: name,
+    value: 0,
+    display,
+    detail:
+      awardId === "total_earnings"
+        ? { prizes_missing: leader.detail.prizes_missing, lines: [], payments: [] }
+        : {},
+  }));
+  return [...places, ...zeros].map((row, index) => ({ ...row, rank: index + 1 }));
+}
+
+/** Stored top 10 plus the bench kept on the leader, in rank order. */
+export function ownerBoard(places: SuperlativeRow[]) {
+  const ranked = [...places].sort((left, right) => left.rank - right.rank);
+  const leader = ranked[0];
+  const extras = (leader?.detail.alternates ?? []).map((alt, index) => ({
+    category: leader.category,
+    scope: leader.scope,
+    rank: ranked.length + index + 1,
+    subject_type: alt.subject_type,
+    subject_key: String(alt.subject_key),
+    subject_name: alt.subject_name,
+    value: Number(alt.value),
+    display: alt.display,
+    detail: alt.detail ?? {},
+  }));
+  return [...ranked, ...extras].map((row, index) => {
+    const { alternates: _alternates, ...detail } = row.detail;
+    return { ...row, rank: index + 1, detail };
+  });
 }
 
 export function podiumRows(
