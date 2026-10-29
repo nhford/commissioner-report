@@ -2,7 +2,7 @@ name: Scrape Daily Archives
 
 on:
   schedule:
-    # Daily 12pm EST in-season (UTC; EST-oriented)
+    # Daily 12pm EST (17:00 UTC) in-season. GitHub cron is UTC-only; this is fixed UTC-5.
     - cron: "0 17 * 8-12,1 *"
   workflow_dispatch:
 

@@ -2,8 +2,8 @@ name: Scrape Player Records
 
 on:
   schedule:
-    # Tuesday 12pm EST after MNF
-    - cron: "0 17 * 8-12,1 2"
+    # Tuesday 3:30am EST (08:30 UTC). GitHub cron is UTC-only; this is fixed UTC-5.
+    - cron: "30 8 * 8-12,1 2"
   workflow_dispatch:
 
 concurrency:

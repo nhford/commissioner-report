@@ -62,11 +62,11 @@ Superlatives refreshes the current season, then rebuilds every year window and o
 
 | Job | Cadence | Writes |
 | --- | --- | --- |
-| Median Watch | Daily Wed–Mon 8pm ET, plus Sun/Thu 11:30pm ET | `median_pulls`, `median_standings`, `fantasy_logos`, `logos/fantasy/` |
-| Player records | Tuesday 12pm ET | `player_records` |
-| Daily archives | Daily 12pm ET | `player_projection_pulls`, `player_projections`, `league_activity` |
-| Trades | Tuesday 12:30pm ET | `trades` |
-| Superlatives | Tuesday 12:30pm ET | `player_weeks`, `team_weeks`, `draft_picks`, `free_agent_seasons`, `league_activity`, `superlatives` |
+| Median Watch | Wed–Mon 8pm EST, plus Sun/Thu 11:30pm EST | `median_pulls`, `median_standings`, `fantasy_logos`, `logos/fantasy/` |
+| Player records | Tuesday 3:30am EST | `player_records` |
+| Daily archives | Daily 12pm EST | `player_projection_pulls`, `player_projections`, `league_activity` |
+| Trades | Tuesday 3:30am EST | `trades` |
+| Superlatives | Tuesday 3:30am EST | `player_weeks`, `team_weeks`, `draft_picks`, `free_agent_seasons`, `league_activity`, `superlatives` |
 | Fantasy logos | Manual (`workflow_dispatch` or `python scrapers/fantasy_logos.py`) | `fantasy_logos`, `logos/fantasy/{season}/{team_id}`, `logos/fantasy/catalog.json` |
 
 GitHub / Vercel secrets: `ESPN_S2`, `ESPN_SWID`, `SUPABASE_SERVICE_ROLE_KEY`, `REVALIDATE_SECRET`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Optional variables: `ESPN_LEAGUE_ID`, `ESPN_SEASON_ID`, `VERCEL_REVALIDATE_URL`.
