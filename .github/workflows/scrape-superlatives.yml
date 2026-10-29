@@ -2,8 +2,8 @@ name: Scrape Superlatives
 
 on:
   schedule:
-    # Tuesday 12:30pm ET after MNF
-    - cron: "30 17 * 8-12,1 2"
+    # Tuesday 3:30am EST (08:30 UTC). GitHub cron is UTC-only; this is fixed UTC-5.
+    - cron: "30 8 * 8-12,1 2"
   workflow_dispatch:
 
 concurrency:
