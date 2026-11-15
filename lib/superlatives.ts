@@ -155,6 +155,12 @@ export const AWARDS: AwardDef[] = [
     hint: "Regular-season weeks as the top scorer since 2024. A tie counts for both teams.",
   },
   {
+    id: "payout_runner_up",
+    label: "2nd-place payouts",
+    group: "team",
+    hint: "Regular-season weeks since 2024 as the highest scorer who did not win the weekly pot. A tie for that spot counts for each team.",
+  },
+  {
     id: "lowest_payout",
     label: "Lowest payout",
     group: "team",
@@ -344,6 +350,7 @@ export const OWNER_AWARDS = new Set([
   "lowest_three_week",
   "highest_three_week",
   "payout_wins",
+  "payout_runner_up",
   "total_earnings",
   "median_streak",
   "median_misses",
@@ -361,6 +368,7 @@ export const OWNER_AWARDS = new Set([
 export const ONE_OWNER_AWARDS = new Set([
   "total_earnings",
   "payout_wins",
+  "payout_runner_up",
   "most_trades",
   "projection_beater",
   "lineup_efficiency",
@@ -772,6 +780,7 @@ export function teamWeekRows(
 const ZERO_OWNER_DISPLAY: Record<string, string> = {
   total_earnings: "$0",
   payout_wins: "0 weeks",
+  payout_runner_up: "0 weeks",
   most_trades: "0 trades",
   anti_projection_starts: "0 starts",
   projection_beater: "0.0%",

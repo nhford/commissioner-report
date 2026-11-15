@@ -152,6 +152,7 @@ def owners_in_scope(scope: str) -> list[str]:
 ZERO_OWNER_DISPLAY = {
     "total_earnings": "$0",
     "payout_wins": "0 weeks",
+    "payout_runner_up": "0 weeks",
     "most_trades": "0 trades",
     "anti_projection_starts": "0 starts",
     "projection_beater": "0.0%",
@@ -170,6 +171,7 @@ OWNER_AWARDS = {
     "lowest_three_week",
     "highest_three_week",
     "payout_wins",
+    "payout_runner_up",
     "total_earnings",
     "median_streak",
     "median_misses",
@@ -1180,7 +1182,7 @@ def _without_shared_weeks(items: list[dict]) -> list[dict]:
     return kept
 
 
-def weekly_winners(rows: list[dict], scope: str) -> list[tuple[tuple[int, int], list[dict]]]:
+def _payout_weeks(rows: list[dict], scope: str) -> list[tuple[tuple[int, int], list[dict]]]:
     groups: dict[tuple[int, int], list[dict]] = {}
     for row in rows:
         season = int(row["season"])
@@ -1195,20 +1197,21 @@ def weekly_winners(rows: list[dict], scope: str) -> list[tuple[tuple[int, int], 
     ordered = []
     for key in sorted(groups):
         week_rows = groups[key]
+        week_rows.sort(key=lambda row: int(row["team_id"]))
+        ordered.append((key, week_rows))
+    return ordered
+
+
+def weekly_winners(rows: list[dict], scope: str) -> list[tuple[tuple[int, int], list[dict]]]:
+    ordered = []
+    for key, week_rows in _payout_weeks(rows, scope):
         best = max(r2(row["points"]) for row in week_rows)
         winners = [row for row in week_rows if r2(row["points"]) == best]
-        winners.sort(key=lambda row: int(row["team_id"]))
         ordered.append((key, winners))
     return ordered
 
 
-def payout_wins(rows: list[dict], scope: str, logos: dict, current_season: int) -> list[dict]:
-    totals: dict[str, int] = {}
-    for _key, winners in weekly_winners(rows, scope):
-        for row in winners:
-            owner = usable_owner(row.get("owner"))
-            if owner:
-                totals[owner] = totals.get(owner, 0) + 1
+def _owner_week_counts(totals: dict[str, int], logos: dict, current_season: int) -> list[dict]:
     items = []
     for owner, total in totals.items():
         noun = "week" if total == 1 else "weeks"
@@ -1224,6 +1227,34 @@ def payout_wins(rows: list[dict], scope: str, logos: dict, current_season: int) 
         )
     items.sort(key=_rank_key)
     return items
+
+
+def payout_wins(rows: list[dict], scope: str, logos: dict, current_season: int) -> list[dict]:
+    totals: dict[str, int] = {}
+    for _key, winners in weekly_winners(rows, scope):
+        for row in winners:
+            owner = usable_owner(row.get("owner"))
+            if owner:
+                totals[owner] = totals.get(owner, 0) + 1
+    return _owner_week_counts(totals, logos, current_season)
+
+
+def payout_runner_up(rows: list[dict], scope: str, logos: dict, current_season: int) -> list[dict]:
+    """Highest score in a payout week that did not win the pot."""
+    totals: dict[str, int] = {}
+    for _key, week_rows in _payout_weeks(rows, scope):
+        best = max(r2(row["points"]) for row in week_rows)
+        rest = [row for row in week_rows if r2(row["points"]) < best]
+        if not rest:
+            continue
+        second = max(r2(row["points"]) for row in rest)
+        for row in rest:
+            if r2(row["points"]) != second:
+                continue
+            owner = usable_owner(row.get("owner"))
+            if owner:
+                totals[owner] = totals.get(owner, 0) + 1
+    return _owner_week_counts(totals, logos, current_season)
 
 
 def total_earnings(
@@ -2149,6 +2180,13 @@ def build_superlatives(
             lambda owner, window=scope: projection_surplus(player_weeks, window, False, owner),
         )
         _store(rows, scope, owners, "payout_wins", payout_wins(team_weeks, scope, logos, current_season))
+        _store(
+            rows,
+            scope,
+            owners,
+            "payout_runner_up",
+            payout_runner_up(team_weeks, scope, logos, current_season),
+        )
         _store(rows, scope, owners, "lowest_payout", lowest_payout_weeks(team_weeks, scope, logos, current_season))
         _store(
             rows,
@@ -2844,6 +2882,16 @@ def self_test() -> None:
     ]
     wins = payout_wins(tied, "all_time", {}, 2026)
     assert {item["subject_name"]: item["value"] for item in wins} == {"Liam": 1, "Noah": 1}
+    seconds = payout_runner_up(tied, "all_time", {}, 2026)
+    assert {item["subject_name"]: item["value"] for item in seconds} == {"Sam": 1}
+    assert seconds[0]["display"] == "1 week"
+    tied_second = [
+        _tw(owner="Noah", team_id=1, week=1, points=100),
+        _tw(owner="Liam", team_id=2, week=1, points=90),
+        _tw(owner="Sam", team_id=3, week=1, points=90),
+    ]
+    both = payout_runner_up(tied_second, "all_time", {}, 2026)
+    assert {item["subject_name"]: item["value"] for item in both} == {"Liam": 1, "Sam": 1}
     earned = total_earnings(
         tied,
         payouts,
