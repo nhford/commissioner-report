@@ -2,6 +2,27 @@
   "league_id": "619156725",
   "name": "Commissioner's Report",
   "current_season": 2026,
+  "full_names": {
+    "Noah": "Noah Ford",
+    "Liam": "Liam Nelson",
+    "Gandhari": "Rohit Gandhari",
+    "Divi": "Rohith Divi",
+    "Alex": "Alex Frederick",
+    "Ajay": "Ajay Manickam",
+    "Stephen": "Stephen Starr",
+    "Rikhav": "Rikhav Shah",
+    "Dean": "Dean Izzo",
+    "Raymond": "Raymond Wheeler",
+    "Keshav": "Keshav Rangan",
+    "Sam": "Sam Warren",
+    "Andoni": "Andoni Z",
+    "Kyler": "Kyler Maira",
+    "Jack": "Jack Blatt"
+  },
+  "owner_groups": {
+    "colored": ["Keshav", "Rikhav", "Divi", "Gandhari", "Sam", "Ajay"],
+    "normal": ["Noah", "Liam", "Raymond", "Dean", "Alex", "Stephen"]
+  },
   "owners_by_year": {
     "2022": {
       "1": "Noah",

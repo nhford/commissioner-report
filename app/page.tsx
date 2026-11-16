@@ -6,15 +6,17 @@ import { formatUpdated } from "@/lib/format";
 export const revalidate = 3600;
 
 export default async function Home() {
-  const [median, players, superlatives] = await Promise.all([
+  const [median, players, superlatives, ogami] = await Promise.all([
     getReport("median-monday"),
     getReport("player-records"),
     getReport("superlatives"),
+    getReport("trade-o-gami"),
   ]);
   const updated: Record<string, string | null> = {
     "/median-monday": formatUpdated(median?.last_updated),
     "/player-records": formatUpdated(players?.last_updated),
     "/superlatives": formatUpdated(superlatives?.last_updated),
+    "/trade-o-gami": formatUpdated(ogami?.last_updated),
   };
 
   return (

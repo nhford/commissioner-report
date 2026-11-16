@@ -26,9 +26,8 @@ const SECTIONS: Section[] = [
   },
   {
     href: "/trade-o-gami",
-    label: "Trade-o-gami",
-    blurb: "Who trades with whom: a chord of completed deals between owners.",
-    soon: true,
+    label: "O-Gami",
+    blurb: "Who has traded, played, or met in the playoffs: a grid of owner pairs.",
   },
   {
     href: "/sams-stuff",
