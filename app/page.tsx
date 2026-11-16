@@ -16,7 +16,7 @@ export default async function Home() {
     "/median-monday": formatUpdated(median?.last_updated),
     "/player-records": formatUpdated(players?.last_updated),
     "/superlatives": formatUpdated(superlatives?.last_updated),
-    "/trade-o-gami": formatUpdated(ogami?.last_updated),
+    "/o-gami": formatUpdated(ogami?.last_updated),
   };
 
   return (
