@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   chord as d3Chord,
   ribbon as d3Ribbon,
@@ -17,6 +17,8 @@ type Hover =
 type Props = {
   owners: string[];
   matrix: number[][];
+  width: number;
+  height: number;
 };
 
 function truncateName(name: string, max = 12) {
@@ -38,24 +40,10 @@ function ribbonPath(source: ChordSubgroup, target: ChordSubgroup, radius: number
   return generator({ source, target }) as unknown as string | null;
 }
 
-export default function TradeChord({ owners, matrix }: Props) {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(640);
+export default function TradeChord({ owners, matrix, width, height }: Props) {
   const [hover, setHover] = useState<Hover>(null);
-
-  useEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const next = entries[0]?.contentRect.width ?? 640;
-      setWidth(Math.max(280, next));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  const size = Math.min(width, 720);
-  const pad = size < 400 ? 64 : 92;
+  const size = Math.max(240, Math.floor(Math.min(width, height)));
+  const pad = size < 400 ? 64 : 88;
   const outerRadius = Math.max(40, size / 2 - pad);
   const innerRadius = outerRadius * 0.92;
 
@@ -95,14 +83,14 @@ export default function TradeChord({ owners, matrix }: Props) {
   }
 
   return (
-    <div ref={wrapRef} className="relative w-full">
+    <div className="relative mx-auto" style={{ width, height }}>
       <svg
         role="img"
-        aria-label="Chord diagram of trades between owners"
+        aria-label="Spool of trades between owners"
         viewBox={`0 0 ${size} ${size}`}
-        width="100%"
+        width={size}
         height={size}
-        className="mx-auto block max-w-full"
+        className="absolute left-1/2 top-1/2 max-w-none -translate-x-1/2 -translate-y-1/2"
       >
         <g transform={`translate(${size / 2},${size / 2})`}>
           {layout.ribbons.map((ribbon) => {

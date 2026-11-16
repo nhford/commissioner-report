@@ -7,6 +7,7 @@ import {
 } from "./logos";
 import { parseSeasons, type PlayerRecord, type PlayerSeason } from "./player-records";
 import type { SuperlativeDetail, SuperlativeRow } from "./superlatives";
+import type { TeamWeekSide } from "./ogami";
 import type { SamPlayerWeek, SamTeamWeek } from "./sam";
 import type { TradeRow } from "./trades";
 
@@ -290,6 +291,46 @@ export async function getSamSource(): Promise<{
     isRegular: Boolean(row.is_regular),
   }));
   return { players, teams };
+}
+
+const TEAM_WEEK_PAGE = 1000;
+
+export async function getTeamWeekSides(): Promise<TeamWeekSide[]> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+
+  const rows: TeamWeekSide[] = [];
+  for (let from = 0; ; from += TEAM_WEEK_PAGE) {
+    const { data, error } = await supabase
+      .from("team_weeks")
+      .select(
+        "season, week, team_id, owner, opponent_owner, points, is_regular, is_consolation",
+      )
+      .order("season", { ascending: true })
+      .order("week", { ascending: true })
+      .order("team_id", { ascending: true })
+      .range(from, from + TEAM_WEEK_PAGE - 1);
+    if (error) {
+      console.error(error.message);
+      return rows;
+    }
+    const page = data ?? [];
+    for (const row of page) {
+      const owner = typeof row.owner === "string" ? row.owner : "";
+      const opponent = typeof row.opponent_owner === "string" ? row.opponent_owner : "";
+      rows.push({
+        season: Number(row.season),
+        week: Number(row.week),
+        owner,
+        opponent,
+        points: Number(row.points),
+        isRegular: Boolean(row.is_regular),
+        isConsolation: Boolean(row.is_consolation),
+      });
+    }
+    if (page.length < TEAM_WEEK_PAGE) break;
+  }
+  return rows;
 }
 
 export async function getTrades(): Promise<{

@@ -25,10 +25,9 @@ const SECTIONS: Section[] = [
     blurb: "Career win-loss for every player rostered in this league.",
   },
   {
-    href: "/trade-o-gami",
-    label: "Trade-o-gami",
-    blurb: "Who trades with whom: a chord of completed deals between owners.",
-    soon: true,
+    href: "/o-gami",
+    label: "O-Gami",
+    blurb: "Who has traded, played, or met in the playoffs: a grid of owner pairs.",
   },
   {
     href: "/sams-stuff",
