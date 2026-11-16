@@ -31,6 +31,11 @@ const SECTIONS: Section[] = [
     soon: true,
   },
   {
+    href: "/sams-stuff",
+    label: "Sam's Stuff",
+    blurb: "Start/sit accuracy and all-play expected record for each season.",
+  },
+  {
     href: "/lineup-efficiency",
     label: "Lineup Efficiency",
     blurb: "Actual lineup vs projection-optimal and best-possible.",
@@ -60,6 +65,7 @@ export const BANNER_ITEMS: NavItem[] = [
   { href: "/", label: "Home" },
   { href: "/median-monday", label: "Median Watch" },
   { href: "/superlatives", label: "Superlatives" },
+  { href: "/sams-stuff", label: "Sam's Stuff" },
 ];
 
 export const HUB_CARDS = SECTIONS.map(({ href, label, blurb, soon }) => ({

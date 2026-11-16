@@ -1,7 +1,7 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { NextResponse } from "next/server";
 
-const PATHS = ["/", "/median-monday", "/player-records", "/superlatives", "/trade-o-gami"];
+const PATHS = ["/", "/median-monday", "/player-records", "/superlatives", "/trade-o-gami", "/sams-stuff"];
 
 export async function POST(request: Request) {
   const secret = request.headers.get("x-revalidate-secret");
