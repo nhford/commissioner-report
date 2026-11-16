@@ -7,6 +7,7 @@ import {
 } from "./logos";
 import { parseSeasons, type PlayerRecord, type PlayerSeason } from "./player-records";
 import type { SuperlativeDetail, SuperlativeRow } from "./superlatives";
+import type { SamPlayerWeek, SamTeamWeek } from "./sam";
 import type { TradeRow } from "./trades";
 
 export type ReportRow = {
@@ -196,6 +197,99 @@ export async function getPlayerRecords(): Promise<{
     };
   });
   return { report, players };
+}
+
+const PAGE = 1000;
+
+async function fetchPages(
+  load: (
+    from: number,
+    to: number,
+  ) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>,
+): Promise<{ rows: unknown[]; error: string | null }> {
+  const rows: unknown[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await load(from, from + PAGE - 1);
+    if (error) return { rows, error: error.message };
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < PAGE) return { rows, error: null };
+  }
+}
+
+export async function getSamSource(): Promise<{
+  players: SamPlayerWeek[];
+  teams: SamTeamWeek[];
+}> {
+  const supabase = getSupabase();
+  if (!supabase) return { players: [], teams: [] };
+
+  const teamResult = await fetchPages((from, to) =>
+    supabase
+      .from("team_weeks")
+      .select("season, week, team_id, team_name, points, is_regular")
+      .eq("is_regular", true)
+      .order("season", { ascending: true })
+      .order("week", { ascending: true })
+      .order("team_id", { ascending: true })
+      .range(from, to),
+  );
+  if (teamResult.error) {
+    console.error(teamResult.error);
+    return { players: [], teams: [] };
+  }
+
+  const playerQuery = (columns: string) =>
+    fetchPages((from, to) =>
+      supabase
+        .from("player_weeks")
+        .select(columns)
+        .order("season", { ascending: true })
+        .order("week", { ascending: true })
+        .order("player_id", { ascending: true })
+        .range(from, to),
+    );
+
+  let playerResult = await playerQuery(
+    "season, week, team_id, player_id, pos, lineup_slot, started, points",
+  );
+  let lineupSlot = true;
+  if (playerResult.error?.includes("lineup_slot")) {
+    lineupSlot = false;
+    playerResult = await playerQuery(
+      "season, week, team_id, player_id, pos, started, points",
+    );
+  }
+  if (playerResult.error) {
+    console.error(playerResult.error);
+    return { players: [], teams: [] };
+  }
+  const playerRows = playerResult.rows;
+  const teamRows = teamResult.rows;
+
+  const players = playerRows.map((row) => {
+    const record = row as Record<string, unknown>;
+    return {
+      season: Number(record.season),
+      week: Number(record.week),
+      teamId: Number(record.team_id),
+      playerId: Number(record.player_id),
+      pos: typeof record.pos === "string" ? record.pos : null,
+      lineupSlot:
+        lineupSlot && typeof record.lineup_slot === "string" ? record.lineup_slot : null,
+      started: Boolean(record.started),
+      points: Number(record.points ?? 0),
+    };
+  });
+  const teams = (teamRows as Record<string, unknown>[]).map((row) => ({
+    season: Number(row.season),
+    week: Number(row.week),
+    teamId: Number(row.team_id),
+    teamName: typeof row.team_name === "string" ? row.team_name : "",
+    points: Number(row.points ?? 0),
+    isRegular: Boolean(row.is_regular),
+  }));
+  return { players, teams };
 }
 
 export async function getTrades(): Promise<{
