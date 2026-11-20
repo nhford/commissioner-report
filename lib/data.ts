@@ -72,6 +72,27 @@ function standingList(data: unknown): RawStanding[] {
   return Array.isArray(data) ? (data as RawStanding[]) : [];
 }
 
+const STANDING_PAGE = 1000;
+
+async function fetchAllStandings(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  columns: string,
+): Promise<{ rows: RawStanding[]; error: string | null }> {
+  const rows: RawStanding[] = [];
+  for (let from = 0; ; from += STANDING_PAGE) {
+    const { data, error } = await supabase
+      .from("median_standings")
+      .select(columns)
+      .order("pull_id", { ascending: true })
+      .order("team", { ascending: true })
+      .range(from, from + STANDING_PAGE - 1);
+    if (error) return { rows, error: error.message };
+    const page = standingList(data);
+    rows.push(...page);
+    if (page.length < STANDING_PAGE) return { rows, error: null };
+  }
+}
+
 export const getReport = cache(async (id: string): Promise<ReportRow | null> => {
   const supabase = getSupabase();
   if (!supabase) return null;
@@ -106,20 +127,18 @@ export async function getMedianHistory(): Promise<{
   if (!pulls.length) return { pulls: [], standings: [] };
 
   const [standingsRes, logosRes] = await Promise.all([
-    supabase.from("median_standings").select(STANDING_COLUMNS),
+    fetchAllStandings(supabase, STANDING_COLUMNS),
     supabase.from("fantasy_logos").select("season, team_name, logo_path"),
   ]);
-  let standingRows = standingList(standingsRes.data);
+  let standingRows = standingsRes.rows;
   if (standingsRes.error) {
-    const legacy = await supabase
-      .from("median_standings")
-      .select(STANDING_COLUMNS_LEGACY);
+    const legacy = await fetchAllStandings(supabase, STANDING_COLUMNS_LEGACY);
     if (legacy.error) {
-      console.error(standingsRes.error.message);
-      console.error(legacy.error.message);
+      console.error(standingsRes.error);
+      console.error(legacy.error);
       return { pulls, standings: [] };
     }
-    standingRows = standingList(legacy.data);
+    standingRows = legacy.rows;
   }
   if (logosRes.error) console.error(logosRes.error.message);
 
