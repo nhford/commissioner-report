@@ -144,6 +144,50 @@ def started_defense_points(players: list[dict]) -> float:
     return round(total, 2)
 
 
+# A quarterback and his receiver each get a touchdown when both start.
+# Threshold bonuses (40+ and 50+) repeat a touchdown that is already counted.
+SKILL_TOUCHDOWNS = (
+    "passingTouchdowns",
+    "rushingTouchdowns",
+    "receivingTouchdowns",
+    "kickoffReturnTouchdowns",
+    "puntReturnTouchdowns",
+    "interceptionReturnTouchdowns",
+    "fumbleReturnTouchdowns",
+    "fumbleRecoveredForTD",
+)
+
+
+def _is_dst_player(player) -> bool:
+    pos = getattr(player, "position", None)
+    slot = getattr(player, "lineupSlot", None) or ""
+    name = getattr(player, "name", None) or ""
+    return pos in {"D/ST", "DST"} or slot in {"D/ST", "DST"} or "D/ST" in str(name)
+
+
+def starter_touchdowns(player) -> int:
+    """Touchdowns by a started player, excluding the D/ST slot."""
+    slot = getattr(player, "lineupSlot", None) or ""
+    if slot in ("IR", "BE", ""):
+        return 0
+    if _is_dst_player(player):
+        return 0
+    breakdown = getattr(player, "points_breakdown", None)
+    if not isinstance(breakdown, dict):
+        return 0
+    total = 0.0
+    for key in SKILL_TOUCHDOWNS:
+        try:
+            total += float(breakdown.get(key) or 0)
+        except (TypeError, ValueError):
+            continue
+    return int(round(total))
+
+
+def lineup_touchdowns(lineup) -> int:
+    return sum(starter_touchdowns(player) for player in lineup or [])
+
+
 def keeps_matchup(kind: str, home_id: int | None, away_id: int | None) -> bool:
     if home_id is None or away_id is None:
         return False
@@ -192,6 +236,7 @@ def side_rows(year: int, week: int, box, side: str, slots: dict, is_regular: boo
         "projections_ok": False,
         "is_consolation": False,
         "dst_points": started_defense_points(players),
+        "touchdowns": lineup_touchdowns(lineup),
     }
     return players, team_row, projected_mass
 
@@ -424,6 +469,58 @@ def unrostered_season_points(league, year: int, rostered: set[int]) -> list[dict
     return kept[:FREE_AGENT_KEEP]
 
 
+def fill_touchdowns(team_weeks: list[dict]) -> int:
+    """Set starter touchdowns from ESPN box scores where the stored week has none."""
+    needed: dict[int, set[int]] = {}
+    for row in team_weeks:
+        if row.get("touchdowns") is not None:
+            continue
+        needed.setdefault(int(row["season"]), set()).add(int(row["week"]))
+    if not needed:
+        return 0
+    found: dict[tuple[int, int, int], int] = {}
+    for season, weeks in sorted(needed.items()):
+        league = get_league(season)
+        for week in sorted(weeks):
+            try:
+                boxes = league.box_scores(week=week)
+            except Exception as exc:
+                print(f"  touchdowns {season} week {week} skipped: {exc}")
+                continue
+            for box in boxes or []:
+                for side in ("home", "away"):
+                    team_id = box_team_id(getattr(box, f"{side}_team"))
+                    if team_id is None:
+                        continue
+                    found[(season, week, team_id)] = lineup_touchdowns(getattr(box, f"{side}_lineup"))
+            print(f"  touchdowns {season} week {week}")
+    filled = 0
+    for row in team_weeks:
+        if row.get("touchdowns") is not None:
+            continue
+        key = (int(row["season"]), int(row["week"]), int(row["team_id"]))
+        if key not in found:
+            continue
+        row["touchdowns"] = found[key]
+        filled += 1
+    return filled
+
+
+def persist_touchdowns(client, team_weeks: list[dict]) -> None:
+    payload = [
+        {
+            "season": int(row["season"]),
+            "week": int(row["week"]),
+            "team_id": int(row["team_id"]),
+            "touchdowns": int(row["touchdowns"]),
+        }
+        for row in team_weeks
+        if row.get("touchdowns") is not None
+    ]
+    _upsert_batches(client, "team_weeks", payload, "season,week,team_id")
+    print(f"  stored touchdowns on {len(payload)} team-weeks")
+
+
 def team_weeks_have_column(client, column: str) -> bool:
     try:
         client.table("team_weeks").select(column).limit(1).execute()
@@ -565,6 +662,7 @@ def normalize_team(row: dict) -> dict:
         "opponent_owner": usable_owner(row.get("opponent_owner")),
         "is_consolation": bool(row.get("is_consolation")),
         "dst_points": normalize_number(row.get("dst_points")),
+        "touchdowns": None if row.get("touchdowns") is None else int(row["touchdowns"]),
     }
 
 
@@ -746,6 +844,7 @@ def main() -> None:
     args = parse_args()
     if args.self_test:
         self_test()
+        touchdown_self_test()
         waiver_self_test()
         nfl_team_self_test()
         return
@@ -763,10 +862,13 @@ def main() -> None:
     through_week = 0
     store_opponent = team_weeks_have_column(client, "opponent_owner")
     store_consolation = team_weeks_have_column(client, "is_consolation")
+    store_touchdowns = team_weeks_have_column(client, "touchdowns")
     if years and not store_opponent:
         print("team_weeks.opponent_owner is missing. Apply supabase/migrations/20261009183000_team_week_opponent.sql so later recomputes keep opponents.")
     if years and not store_consolation:
         print("team_weeks.is_consolation is missing. Apply supabase/migrations/20261010120000_team_week_consolation.sql so losers-bracket weeks can be stored.")
+    if not store_touchdowns:
+        print("team_weeks.touchdowns is missing. Apply supabase/migrations/20261122170000_team_week_touchdowns.sql so touchdown totals are kept.")
     if not table_readable(client, "waiver_bids"):
         raise SystemExit(
             "waiver_bids is missing. Apply supabase/migrations/20261012180000_waiver_bids.sql"
@@ -798,6 +900,9 @@ def main() -> None:
             for row in team_rows:
                 row.pop("is_consolation", None)
                 row.pop("dst_points", None)
+        if not store_touchdowns:
+            for row in team_rows:
+                row.pop("touchdowns", None)
         week_fixes = correct_player_weeks(player_rows, week_teams)
         if week_fixes:
             print(f"  corrected {len(week_fixes)} NFL teams")
@@ -838,6 +943,8 @@ def main() -> None:
         team_columns += ", opponent_owner"
     if store_consolation:
         team_columns += ", is_consolation, dst_points"
+    if store_touchdowns:
+        team_columns += ", touchdowns"
     team_weeks = [
         normalize_team(row)
         for row in fetch_all(
@@ -850,6 +957,12 @@ def main() -> None:
     for row in team_weeks:
         if not row.get("opponent_owner"):
             row["opponent_owner"] = scraped_opponents.get((row["season"], row["week"], row["team_id"]))
+    if any(row.get("touchdowns") is None for row in team_weeks):
+        print("Touchdowns")
+        filled = fill_touchdowns(team_weeks)
+        print(f"  filled {filled} team-weeks")
+        if store_touchdowns:
+            persist_touchdowns(client, team_weeks)
     draft_picks = [
         normalize_pick(row)
         for row in fetch_all(
@@ -918,6 +1031,29 @@ def main() -> None:
         write_report(client, current, through_week)
     ping_revalidate()
     print(f"Wrote {len(rows)} superlative rows")
+
+
+def touchdown_self_test() -> None:
+    class Player:
+        def __init__(self, slot, pos, breakdown, name="Player"):
+            self.lineupSlot = slot
+            self.position = pos
+            self.points_breakdown = breakdown
+            self.name = name
+
+    passer = Player("QB", "QB", {"passingTouchdowns": 3, "passing40PlusYardTD": 1})
+    assert starter_touchdowns(passer) == 3
+    scorer = Player(
+        "WR",
+        "WR",
+        {"receivingTouchdowns": 2, "receiving40PlusYardTD": 1, "rushingTouchdowns": 1},
+    )
+    assert starter_touchdowns(scorer) == 3
+    defense = Player("D/ST", "D/ST", {"defensiveTouchdowns": 2, "kickoffReturnTouchdowns": 1}, "Bills D/ST")
+    assert starter_touchdowns(defense) == 0
+    bench = Player("BE", "RB", {"rushingTouchdowns": 4})
+    assert starter_touchdowns(bench) == 0
+    assert lineup_touchdowns([passer, scorer, defense, bench]) == 6
 
 
 if __name__ == "__main__":

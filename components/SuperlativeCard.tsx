@@ -267,7 +267,7 @@ function hasDetail(awardId: string, place: SuperlativeRow) {
   if (awardId === "most_auction_dollars") return (detail.seasons?.length ?? 0) > 0;
   if (awardId === "total_earnings") return (detail.lines?.length ?? 0) > 0;
   if (awardId === "nfl_starter_week") return (detail.starters?.length ?? 0) > 0;
-  if (showsProjectionWeeks(awardId)) {
+  if (showsProjectionWeeks(awardId) || awardId === "six_seven_games") {
     return (detail.weeks?.length ?? 0) > 0;
   }
   return false;
@@ -342,6 +342,19 @@ function DetailBody({
                     <span className="text-white/45">
                       {" "}
                       · {wholeDollars ? dollarText(line.amount) : money(line.amount)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {awardId === "six_seven_games" && detail.weeks?.length ? (
+              <ul className="mt-1 space-y-0.5">
+                {detail.weeks.map((week) => (
+                  <li key={`${place.rank}-${week.season}-${week.week}-${week.opponent}`}>
+                    {week.season} Wk {week.week}
+                    <span className="text-white/45">
+                      {" "}
+                      · {week.result} vs {week.opponent}
                     </span>
                   </li>
                 ))}
