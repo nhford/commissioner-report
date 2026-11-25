@@ -81,8 +81,7 @@ export default function SuperlativesView({
     !allTime ||
     !filters.players ||
     !filters.teams ||
-    !filters.hideDefense ||
-    filters.sortLatest;
+    !filters.hideDefense;
   const [asOfSeason, asOfWeek] = boardAsOf(rows);
 
   const years = Array.from(
@@ -213,6 +212,7 @@ export default function SuperlativesView({
               Current Season
             </a>
           </div>
+          <FilterToggle name="latest" label="Sort by Latest" checked={filters.sortLatest} />
         </div>
 
         <details className="max-w-xl" open={advancedOpen || undefined}>
@@ -275,7 +275,6 @@ export default function SuperlativesView({
               </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2">
-              <FilterToggle name="latest" label="Sort by Latest" checked={filters.sortLatest} />
               <FilterToggle name="teams" label="Team Awards" checked={filters.teams} />
               <FilterToggle name="players" label="Player Awards" checked={filters.players} />
               <FilterToggle name="dst" label="Hide D/ST" checked={filters.hideDefense} />

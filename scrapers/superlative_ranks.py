@@ -11,6 +11,8 @@ from pathlib import Path
 PAYOUT_START = 2024
 # Week-level median and payout awards start here. Team-week highs and lows do not.
 FORMAT_START = 2024
+# 2022 did not count median, so the 6/7 matchup starts the next season.
+MEDIAN_MATCH_START = 2023
 TEAM_WEEK_AWARDS = {"lowest_team_week", "highest_team_week"}
 STRETCH_AWARDS = {"lowest_three_week", "highest_three_week"}
 TEAM_WEEK_VARIANTS = ("full_scores", "with_consolation", "full_with_consolation")
@@ -45,6 +47,13 @@ def signed_points(value: float) -> str:
 def score_text(value: float) -> str:
     """Team scores stay at two decimals, including a whole number."""
     return f"{float(value):.2f}"
+
+
+def signed_td(value: int) -> str:
+    count = int(value)
+    if count > 0:
+        return f"+{count} TD"
+    return f"{count} TD"
 
 
 def money_text(amount: float) -> str:
@@ -154,6 +163,7 @@ ZERO_OWNER_DISPLAY = {
     "payout_wins": "0 weeks",
     "payout_runner_up": "0 weeks",
     "most_trades": "0 trades",
+    "six_seven_games": "0 Games, 0-0 Record",
     "anti_projection_starts": "0 starts",
     "projection_beater": "0.0%",
     "lineup_efficiency": "0.0%",
@@ -176,11 +186,13 @@ OWNER_AWARDS = {
     "median_streak",
     "median_misses",
     "most_trades",
+    "six_seven_games",
     "projection_beater",
     "lineup_efficiency",
     "anti_projection_starts",
     "team_duo_trades",
     "closest_matchup",
+    "worst_td_diff_win",
     "faab_precision",
     "faab_win_pct",
 }
@@ -240,6 +252,19 @@ def _present_for_owner(category: str, item: dict) -> dict:
         if detail.get("consolation"):
             display = f"{display} · consolation"
         return {**item, "subject_name": week_text(season, week), "display": display}
+    if category == "worst_td_diff_win":
+        opponent = detail.get("opponent_owner")
+        mine = int(detail.get("touchdowns") or 0)
+        theirs = int(detail.get("opponent_touchdowns") or 0)
+        matchup = f"{mine}–{theirs}"
+        display = f"{signed_td(int(item['value']))} · {matchup}"
+        if opponent:
+            display = f"{display} · vs {opponent}"
+        return {
+            **item,
+            "subject_name": week_text(int(detail["season"]), int(detail["week"])),
+            "display": display,
+        }
     if category in STRETCH_AWARDS:
         label = span_text(
             int(detail["start_season"]),
@@ -1091,6 +1116,97 @@ def closest_matchups(
     return items
 
 
+def _touchdowns(row: dict) -> int | None:
+    if "touchdowns" not in row or row.get("touchdowns") is None:
+        return None
+    return int(row["touchdowns"])
+
+
+def worst_td_differential_wins(
+    rows: list[dict],
+    scope: str,
+    logos: dict,
+    current_season: int,
+) -> list[dict]:
+    """Most negative starter-touchdown gap among wins. Consolation games are left out.
+
+    `touchdowns` counts passing, rushing, receiving, and return scores by
+    starters. The same play counts for the quarterback and the receiver.
+    D/ST touchdowns are already left out. Ties are not wins.
+    """
+    by_week: dict[tuple[int, int], dict[str, dict]] = {}
+    for row in rows:
+        if row.get("is_consolation"):
+            continue
+        if _touchdowns(row) is None:
+            continue
+        season = int(row["season"])
+        if not in_scope(season, scope):
+            continue
+        owner = usable_owner(row.get("owner"))
+        opponent = usable_owner(row.get("opponent_owner"))
+        if not owner or not opponent or owner == opponent:
+            continue
+        by_week.setdefault((season, int(row["week"])), {})[owner] = row
+
+    items = []
+    seen: set[tuple] = set()
+    for (season, week), owners in by_week.items():
+        for owner, row in owners.items():
+            opponent = usable_owner(row.get("opponent_owner"))
+            if not opponent or opponent not in owners or opponent == owner:
+                continue
+            pair = tuple(sorted((owner, opponent)))
+            key = (season, week, pair)
+            if key in seen:
+                continue
+            seen.add(key)
+            other = owners[opponent]
+            owner_pts = r2(row["points"])
+            other_pts = r2(other["points"])
+            owner_td = _touchdowns(row)
+            other_td = _touchdowns(other)
+            if owner_td is None or other_td is None or owner_pts == other_pts:
+                continue
+            if owner_pts > other_pts:
+                winner, winner_td, loser, loser_td = owner, owner_td, opponent, other_td
+                winner_row = row
+            else:
+                winner, winner_td, loser, loser_td = opponent, other_td, owner, owner_td
+                winner_row = other
+            margin = winner_td - loser_td
+            items.append(
+                {
+                    "subject_type": "team",
+                    "subject_key": f"{winner}:{season}:{week}",
+                    "subject_name": winner,
+                    "value": margin,
+                    "display": (
+                        f"{signed_td(margin)} · {winner_td}–{loser_td} · "
+                        f"vs {loser} · {week_text(season, week)}"
+                    ),
+                    "detail": {
+                        "season": season,
+                        "week": week,
+                        "team_name": winner_row.get("team_name"),
+                        "logo_path": owner_logo(logos, season, winner, current_season),
+                        "opponent_owner": loser,
+                        "touchdowns": winner_td,
+                        "opponent_touchdowns": loser_td,
+                    },
+                }
+            )
+    items.sort(
+        key=lambda item: (
+            item["value"],
+            item["detail"]["season"],
+            item["detail"]["week"],
+            item["subject_name"],
+        )
+    )
+    return items
+
+
 def _stretch_display(points: float, start: dict, end: dict, consolation: bool) -> str:
     label = span_text(
         int(start["season"]),
@@ -1616,6 +1732,107 @@ def streaks(rows: list[dict], scope: str, logos: dict, current_season: int, abov
     return items
 
 
+def _games_record(games: int, wins: int, losses: int) -> str:
+    noun = "Game" if games == 1 else "Games"
+    return f"{games} {noun}, {wins}-{losses} Record"
+
+
+def _boundary_matchups(week_rows: list[dict]) -> list[tuple[dict, dict]]:
+    """Last team to make median against the first team to miss it.
+
+    Ten teams use 5th against 6th. Twelve teams use 6th against 7th. A tie on
+    the median score counts as making it, so the opponent is the highest score
+    still short of that line. The higher score is returned first.
+    """
+    by_owner: dict[str, dict] = {}
+    for row in week_rows:
+        owner = usable_owner(row.get("owner"))
+        if not owner or owner in by_owner:
+            continue
+        by_owner[owner] = row
+    if len(by_owner) < 2:
+        return []
+    cut = median_cutoff([r2(row["points"]) for row in by_owner.values()])
+    on_line = {owner for owner, row in by_owner.items() if r2(row["points"]) == cut}
+    below = [r2(row["points"]) for row in by_owner.values() if r2(row["points"]) < cut]
+    if not on_line or not below:
+        return []
+    miss_score = max(below)
+    just_missed = {owner for owner, row in by_owner.items() if r2(row["points"]) == miss_score}
+    found = []
+    seen: set[tuple[str, str]] = set()
+    for owner in on_line:
+        row = by_owner[owner]
+        opponent = usable_owner(row.get("opponent_owner"))
+        if not opponent or opponent not in just_missed or opponent == owner:
+            continue
+        other = by_owner[opponent]
+        if usable_owner(other.get("opponent_owner")) != owner:
+            continue
+        pair = tuple(sorted((owner, opponent)))
+        if pair in seen:
+            continue
+        seen.add(pair)
+        found.append((row, other))
+    return found
+
+
+def six_seven_games(rows: list[dict], scope: str, logos: dict, current_season: int) -> list[dict]:
+    """Times an owner played the median-line game, then their record in those games."""
+    buckets: dict[tuple[int, int], list[dict]] = {}
+    for row in rows:
+        season = int(row["season"])
+        if (
+            season < MEDIAN_MATCH_START
+            or row.get("is_consolation")
+            or not row.get("is_regular")
+            or not in_scope(season, scope)
+        ):
+            continue
+        if not usable_owner(row.get("owner")):
+            continue
+        buckets.setdefault((int(row["season"]), int(row["week"])), []).append(row)
+    record: dict[str, list[int]] = {}
+    played: dict[str, list[dict]] = {}
+    for (season, week), week_rows in sorted(buckets.items()):
+        for winner, loser in _boundary_matchups(week_rows):
+            for row, result in ((winner, "W"), (loser, "L")):
+                owner = usable_owner(row.get("owner"))
+                opponent = usable_owner(row.get("opponent_owner"))
+                if not owner or not opponent:
+                    continue
+                bucket = record.setdefault(owner, [0, 0])
+                bucket[0 if result == "W" else 1] += 1
+                played.setdefault(owner, []).append(
+                    {
+                        "season": season,
+                        "week": week,
+                        "opponent": opponent,
+                        "result": result,
+                    }
+                )
+    items = []
+    for owner, (wins, losses) in record.items():
+        games = wins + losses
+        items.append(
+            {
+                "subject_type": "team",
+                "subject_key": owner,
+                "subject_name": owner,
+                "value": games,
+                "display": _games_record(games, wins, losses),
+                "detail": {
+                    "logo_path": owner_logo(logos, current_season, owner, current_season),
+                    "wins": wins,
+                    "losses": losses,
+                    "weeks": played[owner],
+                },
+            }
+        )
+    items.sort(key=lambda item: (-item["value"], -int(item["detail"]["wins"]), item["subject_name"]))
+    return items
+
+
 def trade_counts(trades: list[dict], scope: str) -> tuple[dict[tuple[str, str], int], dict[str, int]]:
     pairs: dict[tuple[str, str], int] = {}
     owners: dict[str, int] = {}
@@ -2137,6 +2354,13 @@ def build_superlatives(
             "closest_matchup",
             closest_matchups(team_weeks, scope, logos, current_season),
         )
+        _store(
+            rows,
+            scope,
+            owners,
+            "worst_td_diff_win",
+            worst_td_differential_wins(team_weeks, scope, logos, current_season),
+        )
         _store(rows, scope, owners, "highest_median", median_weeks(team_weeks, scope, logos, current_season, True))
         _store(rows, scope, owners, "lowest_median", median_weeks(team_weeks, scope, logos, current_season, False))
         _store(
@@ -2197,6 +2421,13 @@ def build_superlatives(
         )
         _store(rows, scope, owners, "median_streak", streaks(team_weeks, scope, logos, current_season, True))
         _store(rows, scope, owners, "median_misses", streaks(team_weeks, scope, logos, current_season, False))
+        _store(
+            rows,
+            scope,
+            owners,
+            "six_seven_games",
+            six_seven_games(team_weeks, scope, logos, current_season),
+        )
         _store(rows, scope, owners, "team_duo_trades", team_duo_trades(trades, scope, logos, current_season))
         _store(rows, scope, owners, "most_trades", most_trades(trades, scope, logos, current_season))
         _store(
@@ -2371,6 +2602,8 @@ def visible_board(rows: list[dict], hide_defense: bool, limit: int = 10) -> list
 
 
 STREAK_AWARDS = {"median_streak", "median_misses"}
+# Both sides of a 6/7 game change, even when the loser stays outside the top 10.
+ROSTER_CHANGE_AWARDS = {"six_seven_games"}
 
 
 def board_changes(
@@ -2478,6 +2711,19 @@ def stamp_recency(final_rows: list[dict], snapshots: list[tuple[int, int, list[d
                     board_last[slot] = as_of
                 entrants = key[0] != "least_fantasy_teams"
                 changed = board_changes(prior, board, entrants, key[0] in STREAK_AWARDS)
+                if key[0] in ROSTER_CHANGE_AWARDS:
+                    roster = [
+                        (
+                            str(row["subject_key"]),
+                            r2(row["value"]),
+                            row.get("subject_name") or "",
+                            row.get("display") or "",
+                        )
+                        for row in _expanded_board(group)
+                    ]
+                    roster_key = (*key, hide, "roster")
+                    changed.update(board_changes(previous.get(roster_key, []), roster, entrants))
+                    previous[roster_key] = roster
                 if prior and key[0] == "least_fantasy_teams":
                     changed.update(rising_entrants(prior, board, earlier))
                 for subject_key in changed:
@@ -3081,6 +3327,57 @@ def self_test() -> None:
     assert [row["subject_name"] for row in sam_games] == ["Noah & Sam"]
     assert sam_games[0]["display"] == "150.00–100.00 · 50.00 · 2024 Wk 2"
 
+    td_rows = [
+        _tw(owner="Kyler", team_id=1, season=2022, week=11, points=107.74, opponent_owner="Noah", touchdowns=0),
+        _tw(owner="Noah", team_id=2, season=2022, week=11, points=84.9, opponent_owner="Kyler", touchdowns=4),
+        _tw(owner="Alex", team_id=3, season=2024, week=14, points=129.7, opponent_owner="Noah", touchdowns=2),
+        _tw(owner="Noah", team_id=2, season=2024, week=14, points=127.28, opponent_owner="Alex", touchdowns=6),
+        _tw(owner="Liam", team_id=4, season=2024, week=1, points=100, opponent_owner="Sam", touchdowns=5),
+        _tw(owner="Sam", team_id=5, season=2024, week=1, points=90, opponent_owner="Liam", touchdowns=1),
+        _tw(owner="Dean", team_id=6, season=2024, week=2, points=80, opponent_owner="Ajay", touchdowns=1),
+        _tw(owner="Ajay", team_id=7, season=2024, week=2, points=80, opponent_owner="Dean", touchdowns=9),
+        _tw(
+            owner="Sam",
+            team_id=5,
+            season=2024,
+            week=16,
+            points=50,
+            opponent_owner="Noah",
+            touchdowns=0,
+            is_consolation=True,
+            is_regular=False,
+        ),
+        _tw(
+            owner="Noah",
+            team_id=2,
+            season=2024,
+            week=16,
+            points=40,
+            opponent_owner="Sam",
+            touchdowns=8,
+            is_consolation=True,
+            is_regular=False,
+        ),
+        _tw(owner="Noah", team_id=2, season=2023, week=1, points=10, opponent_owner="Liam"),
+        _tw(owner="Liam", team_id=4, season=2023, week=1, points=1, opponent_owner="Noah", touchdowns=0),
+    ]
+    td_wins = worst_td_differential_wins(td_rows, "all_time", {}, 2026)
+    assert [(item["subject_name"], item["value"]) for item in td_wins] == [
+        ("Kyler", -4),
+        ("Alex", -4),
+        ("Liam", 4),
+    ]
+    assert td_wins[0]["display"] == "-4 TD · 0–4 · vs Noah · 2022 Wk 11"
+    assert td_wins[0]["detail"]["touchdowns"] == 0
+    assert td_wins[0]["detail"]["opponent_touchdowns"] == 4
+    assert all(item["detail"]["week"] != 16 for item in td_wins)
+    assert all(item["detail"]["season"] != 2023 for item in td_wins)
+    stored_td: list[dict] = []
+    _store(stored_td, "all_time", ["Alex"], "worst_td_diff_win", td_wins)
+    alex_td = [row for row in stored_td if row["scope"] == "all_time@Alex"]
+    assert [row["subject_name"] for row in alex_td] == ["2024 Wk 14"]
+    assert alex_td[0]["display"] == "-4 TD · 2–6 · vs Noah"
+
     efficiency = rate_award(
         [
             _tw(owner="Noah", starter_points=10, optimal_points=10, points=10),
@@ -3360,6 +3657,36 @@ def self_test() -> None:
     assert rate_after[0]["detail"]["changed_from"] == 100.0
     assert rate_after[0]["detail"]["changed_week"] == 4
     assert "changed_from" not in rate_after[1]["detail"]
+
+    def _six(rank: int, key: str, value: int, display: str) -> dict:
+        return {
+            "category": "six_seven_games",
+            "scope": "2026-2026",
+            "rank": rank,
+            "subject_key": key,
+            "subject_name": key,
+            "value": value,
+            "display": display,
+            "detail": {},
+            "subject_type": "team",
+        }
+
+    held = [_six(rank, f"O{rank}", 1, "1 Game, 1-0 Record") for rank in range(1, 11)]
+    held[0]["detail"]["alternates"] = [
+        {"subject_key": "Dean", "subject_name": "Dean", "value": 0, "display": "0 Games, 0-0 Record", "detail": {}},
+        {"subject_key": "Keshav", "subject_name": "Keshav", "value": 0, "display": "0 Games, 0-0 Record", "detail": {}},
+        {"subject_key": "Sam", "subject_name": "Sam", "value": 0, "display": "0 Games, 0-0 Record", "detail": {}},
+    ]
+    played = [_six(rank, f"O{rank}", 1, "1 Game, 1-0 Record") for rank in range(1, 10)]
+    played.append(_six(10, "Dean", 1, "1 Game, 1-0 Record"))
+    played[0]["detail"]["alternates"] = [
+        {"subject_key": "Keshav", "subject_name": "Keshav", "value": 1, "display": "1 Game, 0-1 Record", "detail": {}},
+        {"subject_key": "Sam", "subject_name": "Sam", "value": 0, "display": "0 Games, 0-0 Record", "detail": {}},
+    ]
+    stamp_recency(played, [(2026, 9, held), (2026, 10, played)])
+    assert played[-1]["detail"]["changed_week"] == 10
+    assert played[0]["detail"]["alternates"][0]["detail"]["changed_week"] == 10
+    assert played[0]["detail"]["alternates"][1]["detail"]["changed_week"] == 9
 
     streak_rows = [
         _pw(player_id=1, name="Deebo", week=1, points=10, projected_points=8),
@@ -3663,6 +3990,196 @@ def self_test() -> None:
     assert "Kyler" not in season_names
     assert "Jack" not in season_names
     assert next(row["display"] for row in season_rows if row["subject_name"] == "Liam") == "$0"
+
+    def _paired(season, week, scores, pairs, **flags):
+        opp = {}
+        for left, right in pairs:
+            opp[left] = right
+            opp[right] = left
+        built = []
+        for index, (owner, points) in enumerate(scores, start=1):
+            built.append(
+                _tw(
+                    owner=owner,
+                    team_id=index,
+                    season=season,
+                    week=week,
+                    points=points,
+                    opponent_owner=opp.get(owner),
+                    **flags,
+                )
+            )
+        return built
+
+    slate = [
+        ("Liam", 120),
+        ("Sam", 110),
+        ("Dean", 100),
+        ("Alex", 90),
+        ("Ajay", 80),
+        ("Keshav", 70),
+        ("Noah", 60),
+        ("Stephen", 50),
+        ("Rikhav", 40),
+        ("Divi", 30),
+        ("Gandhari", 20),
+        ("Raymond", 10),
+    ]
+    boundary_rows = []
+    boundary_rows += _paired(2024, 1, slate, [("Keshav", "Noah")])
+    boundary_rows += _paired(2024, 2, slate, [("Keshav", "Liam"), ("Noah", "Stephen")])
+    liam_win = [
+        ("Keshav", 120),
+        ("Sam", 110),
+        ("Noah", 100),
+        ("Alex", 90),
+        ("Ajay", 80),
+        ("Liam", 70),
+        ("Dean", 60),
+        ("Stephen", 50),
+        ("Rikhav", 40),
+        ("Divi", 30),
+        ("Gandhari", 20),
+        ("Raymond", 10),
+    ]
+    boundary_rows += _paired(2024, 3, liam_win, [("Liam", "Dean")])
+    sam_win = [
+        ("Keshav", 120),
+        ("Noah", 110),
+        ("Dean", 100),
+        ("Alex", 90),
+        ("Ajay", 80),
+        ("Sam", 70),
+        ("Liam", 60),
+        ("Stephen", 50),
+        ("Rikhav", 40),
+        ("Divi", 30),
+        ("Gandhari", 20),
+        ("Raymond", 10),
+    ]
+    boundary_rows += _paired(2024, 4, sam_win, [("Sam", "Liam")])
+    tied_line = [
+        ("Liam", 120),
+        ("Dean", 110),
+        ("Ajay", 100),
+        ("Stephen", 90),
+        ("Keshav", 80),
+        ("Alex", 80),
+        ("Noah", 70),
+        ("Sam", 60),
+        ("Rikhav", 50),
+        ("Divi", 40),
+        ("Gandhari", 30),
+        ("Raymond", 20),
+    ]
+    boundary_rows += _paired(2024, 5, tied_line, [("Keshav", "Noah"), ("Alex", "Liam")])
+    one_sided = [
+        ("Liam", 120),
+        ("Sam", 110),
+        ("Dean", 100),
+        ("Alex", 90),
+        ("Ajay", 80),
+        ("Stephen", 50),
+        ("Keshav", 40),
+        ("Noah", 30),
+        ("Gandhari", 20),
+        ("Raymond", 10),
+    ]
+    boundary_rows += _paired(2024, 6, one_sided, [])
+    boundary_rows.append(
+        _tw(owner="Rikhav", team_id=6, season=2024, week=6, points=70, opponent_owner="Divi")
+    )
+    boundary_rows.append(
+        _tw(owner="Divi", team_id=7, season=2024, week=6, points=60, opponent_owner="Gandhari")
+    )
+    alex_win = [
+        ("Liam", 120),
+        ("Sam", 110),
+        ("Dean", 100),
+        ("Keshav", 90),
+        ("Ajay", 80),
+        ("Alex", 70),
+        ("Rikhav", 60),
+        ("Stephen", 50),
+        ("Noah", 40),
+        ("Divi", 30),
+        ("Gandhari", 20),
+        ("Raymond", 10),
+    ]
+    boundary_rows += _paired(2024, 7, alex_win, [("Alex", "Rikhav")])
+    boundary_rows += _paired(2024, 8, slate, [("Keshav", "Noah")], is_consolation=True)
+    boundary_rows += _paired(2024, 16, slate, [("Keshav", "Noah")], is_regular=False)
+    ten_team = [
+        ("Liam", 100),
+        ("Sam", 90),
+        ("Dean", 80),
+        ("Alex", 70),
+        ("Keshav", 60),
+        ("Noah", 50),
+        ("Stephen", 40),
+        ("Rikhav", 30),
+        ("Divi", 20),
+        ("Gandhari", 10),
+    ]
+    boundary_rows += _paired(2022, 1, ten_team, [("Keshav", "Noah")])
+    ten_team_lower = [
+        ("Sam", 100),
+        ("Dean", 90),
+        ("Alex", 80),
+        ("Ajay", 70),
+        ("Liam", 60),
+        ("Keshav", 50),
+        ("Noah", 40),
+        ("Stephen", 30),
+        ("Rikhav", 20),
+        ("Divi", 10),
+    ]
+    boundary_rows += _paired(2022, 2, ten_team_lower, [("Keshav", "Noah"), ("Liam", "Sam")])
+    assert _games_record(0, 0, 0) == ZERO_OWNER_DISPLAY["six_seven_games"]
+    boundary = six_seven_games(boundary_rows, "all_time", {(2026, "Keshav"): "fantasy/2026/k.jpg"}, 2026)
+    assert [item["subject_name"] for item in boundary] == [
+        "Keshav",
+        "Liam",
+        "Noah",
+        "Alex",
+        "Sam",
+        "Dean",
+        "Rikhav",
+    ]
+    assert [item["display"] for item in boundary] == [
+        "2 Games, 2-0 Record",
+        "2 Games, 1-1 Record",
+        "2 Games, 0-2 Record",
+        "1 Game, 1-0 Record",
+        "1 Game, 1-0 Record",
+        "1 Game, 0-1 Record",
+        "1 Game, 0-1 Record",
+    ]
+    assert boundary[0]["detail"]["logo_path"] == "fantasy/2026/k.jpg"
+    assert boundary[0]["detail"]["weeks"] == [
+        {"season": 2024, "week": 1, "opponent": "Noah", "result": "W"},
+        {"season": 2024, "week": 5, "opponent": "Noah", "result": "W"},
+    ]
+    season_boundary = six_seven_games(boundary_rows, "2024-2024", {}, 2026)
+    assert [item["subject_name"] for item in season_boundary] == [
+        "Keshav",
+        "Liam",
+        "Noah",
+        "Alex",
+        "Sam",
+        "Dean",
+        "Rikhav",
+    ]
+    assert season_boundary[0]["display"] == "2 Games, 2-0 Record"
+    assert season_boundary[2]["display"] == "2 Games, 0-2 Record"
+    early = six_seven_games(boundary_rows, "2022-2022", {}, 2026)
+    assert early == []
+    stored_boundary: list[dict] = []
+    _store(stored_boundary, "all_time", ["Kyler"], "six_seven_games", boundary)
+    kyler = [row for row in stored_boundary if row["scope"] == "all_time@Kyler"]
+    assert len(kyler) == 1
+    assert kyler[0]["display"] == "0 Games, 0-0 Record"
+    assert kyler[0]["subject_name"] == "Kyler"
 
     print("superlative ranks ok")
 

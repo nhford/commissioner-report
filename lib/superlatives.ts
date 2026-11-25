@@ -41,7 +41,15 @@ export type SuperlativeDetail = {
   end_season?: number;
   end_week?: number;
   active?: boolean;
-  weeks?: { season: number; week: number; points?: number; projected?: number; bye?: boolean }[];
+  weeks?: {
+    season: number;
+    week: number;
+    points?: number;
+    projected?: number;
+    bye?: boolean;
+    opponent?: string;
+    result?: string;
+  }[];
   prizes_missing?: boolean;
   team_name?: string | null;
   consolation?: boolean;
@@ -131,6 +139,12 @@ export const AWARDS: AwardDef[] = [
     hint: "Smallest gap between the two scores in a game since 2022, including the winners bracket. Winner listed first.",
   },
   {
+    id: "worst_td_diff_win",
+    label: "Worst TD differential win",
+    group: "team",
+    hint: "Winner's starter total touchdowns minus the opponent's. Only show wins.",
+  },
+  {
     id: "highest_median",
     label: "Highest median",
     group: "team",
@@ -212,6 +226,12 @@ export const AWARDS: AwardDef[] = [
     label: "Median misses",
     group: "team",
     hint: "Regular-season weeks in a row outside the top half. In 2022 that is outside the top 5. Playoff weeks are skipped. The same team can hold more than one spot.",
+  },
+  {
+    id: "six_seven_games",
+    label: "Most 6/7 games",
+    group: "team",
+    hint: "Regular-season matchup, from 2023 on, between the last team to make median and the first team to miss it. In a 12-team week that is 6th against 7th. 2022 is left out because median was not counted. A tie on the median score counts as making it. Most games, then the record in those games.",
   },
   {
     id: "team_duo_trades",
@@ -355,11 +375,13 @@ export const OWNER_AWARDS = new Set([
   "median_streak",
   "median_misses",
   "most_trades",
+  "six_seven_games",
   "projection_beater",
   "lineup_efficiency",
   "anti_projection_starts",
   "team_duo_trades",
   "closest_matchup",
+  "worst_td_diff_win",
   "faab_precision",
   "faab_win_pct",
 ]);
@@ -370,6 +392,7 @@ export const ONE_OWNER_AWARDS = new Set([
   "payout_wins",
   "payout_runner_up",
   "most_trades",
+  "six_seven_games",
   "projection_beater",
   "lineup_efficiency",
   "anti_projection_starts",
@@ -515,7 +538,7 @@ export function readFilters(
     players: flag(search.players, true),
     teams: flag(search.teams, true),
     hideDefense: flag(search.dst, true),
-    sortLatest: flag(search.latest, false),
+    sortLatest: flag(search.latest, true),
     tiles: Object.fromEntries(
       TILE_FILTERS.map((filter) => [
         filter.param,
@@ -547,7 +570,7 @@ export function filterHref(
   if (!players) params.set("players", "0");
   if (!teams) params.set("teams", "0");
   if (!hideDefense) params.set("dst", "0");
-  if (sortLatest) params.set("latest", "1");
+  if (!sortLatest) params.set("latest", "0");
   for (const filter of TILE_FILTERS) {
     const on = Boolean(tiles[filter.param]);
     if (filter.defaultOn) {
@@ -782,6 +805,7 @@ const ZERO_OWNER_DISPLAY: Record<string, string> = {
   payout_wins: "0 weeks",
   payout_runner_up: "0 weeks",
   most_trades: "0 trades",
+  six_seven_games: "0 Games, 0-0 Record",
   anti_projection_starts: "0 starts",
   projection_beater: "0.0%",
   lineup_efficiency: "0.0%",
