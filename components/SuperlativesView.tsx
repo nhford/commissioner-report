@@ -36,6 +36,28 @@ function seasonClass(active: boolean) {
   }`;
 }
 
+function SortModeToggle({ checked }: { checked: boolean }) {
+  return (
+    <button
+      type="submit"
+      name="latest"
+      value={checked ? "0" : "1"}
+      aria-pressed={checked}
+      className="flex min-h-9 items-center gap-2 text-sm text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+    >
+      <span
+        aria-hidden
+        className={`flex h-5 w-9 items-center rounded-full border px-0.5 ${
+          checked ? "justify-end border-white bg-white" : "justify-start border-white/70 bg-transparent"
+        }`}
+      >
+        <span className={`h-3.5 w-3.5 rounded-full ${checked ? "bg-black" : "bg-white"}`} />
+      </span>
+      {checked ? "Sort by Latest" : "Sort by Default"}
+    </button>
+  );
+}
+
 function FilterToggle({
   name,
   label,
@@ -214,6 +236,7 @@ export default function SuperlativesView({
           </div>
           <FilterToggle name="latest" label="Sort by Latest" checked={filters.sortLatest} />
         </div>
+        <SortModeToggle checked={filters.sortLatest} />
 
         <details className="max-w-xl" open={advancedOpen || undefined}>
           <summary className="min-h-9 cursor-pointer text-sm text-white/80 underline decoration-white/30 underline-offset-2">
