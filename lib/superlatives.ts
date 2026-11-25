@@ -515,7 +515,7 @@ export function readFilters(
     players: flag(search.players, true),
     teams: flag(search.teams, true),
     hideDefense: flag(search.dst, true),
-    sortLatest: flag(search.latest, false),
+    sortLatest: flag(search.latest, true),
     tiles: Object.fromEntries(
       TILE_FILTERS.map((filter) => [
         filter.param,
@@ -547,7 +547,7 @@ export function filterHref(
   if (!players) params.set("players", "0");
   if (!teams) params.set("teams", "0");
   if (!hideDefense) params.set("dst", "0");
-  if (sortLatest) params.set("latest", "1");
+  if (!sortLatest) params.set("latest", "0");
   for (const filter of TILE_FILTERS) {
     const on = Boolean(tiles[filter.param]);
     if (filter.defaultOn) {
