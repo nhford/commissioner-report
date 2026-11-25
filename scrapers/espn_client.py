@@ -8,12 +8,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 from espn_api.football import League
 
+from league import first_season
+
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 DEFAULT_LEAGUE_ID = "619156725"
 DEFAULT_SEASON_ID = 2026
-FIRST_SEASON = 2022
+FIRST_SEASON = first_season()
 
 
 def require_cookies() -> tuple[str, str]:

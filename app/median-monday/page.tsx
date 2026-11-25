@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import MedianMondayView from "@/components/MedianMondayView";
+import ReportPage from "@/components/ReportPage";
 import { getMedianHistory, getReport } from "@/lib/data";
 import { formatUpdated } from "@/lib/format";
 
@@ -18,42 +19,22 @@ export default async function MedianMondayPage() {
   ]);
   const latest = pulls[0];
 
-  return (
-    <div>
-      <h1 className="text-2xl md:text-3xl font-bold">Median Watch</h1>
-      <p className="mt-2 text-sm text-white/65">
-        {latest
-          ? `Week ${latest.week}${latest.season ? ` · ${latest.season}` : ""}`
-          : report?.current_week
-            ? `Week ${report.current_week}`
-            : "No pulls yet"}
-        {report?.last_updated
-          ? `. Last updated ${formatUpdated(report.last_updated)}.`
-          : "."}
-      </p>
-      <details className="mt-3 max-w-2xl md:hidden">
-        <summary className="min-h-11 cursor-pointer text-sm text-white/70 underline decoration-white/40 underline-offset-2">
-          How Median Watch works
-        </summary>
-        <p className="mt-2 text-sm text-white/70">
-          Each week a team can beat its opponent and also earn a bonus win for
-          finishing in the top half of the league. These percentages are a Monte
-          Carlo of remaining starter projections. Snapshots from here on store
-          M1, the original gamma, and M2, the game simulation. Choose any
-          snapshot to see that pull.
-        </p>
-      </details>
-      <p className="mt-3 hidden max-w-2xl text-sm text-white/70 md:block">
-        Each week a team can beat its opponent and also earn a bonus win for
-        finishing in the top half of the league. These percentages are a Monte
-        Carlo of remaining starter projections. Snapshots from here on store
-        M1, the original gamma, and M2, the game simulation. Choose any pull to
-        see that snapshot.
-      </p>
+  const stamp = latest
+    ? `Week ${latest.week}${latest.season ? ` · ${latest.season}` : ""}`
+    : report?.current_week
+      ? `Week ${report.current_week}`
+      : "No pulls yet";
+  const updated = report?.last_updated
+    ? `${stamp}. Last updated ${formatUpdated(report.last_updated)}.`
+    : `${stamp}.`;
 
-      <div className="mt-6">
-        <MedianMondayView pulls={pulls} standings={standings} />
-      </div>
-    </div>
+  return (
+    <ReportPage
+      title="Median Watch"
+      updated={updated}
+      how="Each week a team can beat its opponent and also earn a bonus win for finishing in the top half of the league. These percentages are a Monte Carlo of remaining starter projections. Snapshots from here on store M1, the original gamma, and M2, the game simulation. Choose any pull to see that snapshot."
+    >
+      <MedianMondayView pulls={pulls} standings={standings} />
+    </ReportPage>
   );
 }

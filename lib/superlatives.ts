@@ -1,3 +1,4 @@
+import awards from "@/data/awards.json";
 import league from "@/data/league.json";
 import { allOwners } from "@/lib/owners";
 
@@ -335,47 +336,11 @@ export type SuperlativeFilters = {
   tiles: Record<string, boolean>;
 };
 
-export const HIDDEN_ON_OWNER = new Set([
-  "least_fantasy_teams",
-  "highest_median",
-  "lowest_median",
-  "lowest_payout",
-]);
-
-export const OWNER_AWARDS = new Set([
-  "lowest_start",
-  "highest_start",
-  "lowest_team_week",
-  "highest_team_week",
-  "lowest_three_week",
-  "highest_three_week",
-  "payout_wins",
-  "payout_runner_up",
-  "total_earnings",
-  "median_streak",
-  "median_misses",
-  "most_trades",
-  "projection_beater",
-  "lineup_efficiency",
-  "anti_projection_starts",
-  "team_duo_trades",
-  "closest_matchup",
-  "faab_precision",
-  "faab_win_pct",
-]);
+export const HIDDEN_ON_OWNER = new Set<string>(awards.hiddenOnOwner);
+export const OWNER_AWARDS = new Set<string>(awards.ownerAwards);
 
 /** One row per owner. The card can open the bench past the top 10. */
-export const ONE_OWNER_AWARDS = new Set([
-  "total_earnings",
-  "payout_wins",
-  "payout_runner_up",
-  "most_trades",
-  "projection_beater",
-  "lineup_efficiency",
-  "anti_projection_starts",
-  "faab_precision",
-  "faab_win_pct",
-]);
+export const ONE_OWNER_AWARDS = new Set<string>(awards.oneOwnerAwards);
 
 export type TileFilter = {
   awardId: string;
@@ -777,17 +742,7 @@ export function teamWeekRows(
   }));
 }
 
-const ZERO_OWNER_DISPLAY: Record<string, string> = {
-  total_earnings: "$0",
-  payout_wins: "0 weeks",
-  payout_runner_up: "0 weeks",
-  most_trades: "0 trades",
-  anti_projection_starts: "0 starts",
-  projection_beater: "0.0%",
-  lineup_efficiency: "0.0%",
-  faab_precision: "0.0% · $0 of $0",
-  faab_win_pct: "0.0% · 0 of 0",
-};
+const ZERO_OWNER_DISPLAY: Record<string, string> = awards.zeroOwnerDisplay;
 
 /** Owners from this year range who are missing, listed after the real results. */
 export function withZeroOwners(

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import ReportPage from "@/components/ReportPage";
 import SuperlativesView from "@/components/SuperlativesView";
 import { getSuperlatives } from "@/lib/data";
 import { formatReportStamp } from "@/lib/format";
@@ -39,29 +40,16 @@ export default async function SuperlativesPage({
   );
 
   return (
-    <div>
-      <h1 className="text-2xl md:text-3xl font-bold">Superlatives</h1>
-      <p className="mt-2 text-sm text-white/65">{formatReportStamp(report)}</p>
-      <details className="mt-3 max-w-2xl md:hidden">
-        <summary className="min-h-11 cursor-pointer text-sm text-white/70 underline decoration-white/40 underline-offset-2">
-          How Superlatives works
-        </summary>
-        <p className="mt-2 text-sm text-white/70">
-          All-Time covers 2022 through this season. Current Season is{" "}
-          {currentSeason} only. Consolation weeks are ignored.
-        </p>
-      </details>
-      <p className="mt-3 hidden max-w-2xl text-sm text-white/70 md:block">
-        All-Time covers 2022 through this season. Current Season is{" "}
-        {currentSeason} only. Consolation weeks are ignored.
-      </p>
-      <div className="mt-6">
-        <SuperlativesView
-          rows={rows}
-          currentSeason={currentSeason}
-          filters={filters}
-        />
-      </div>
-    </div>
+    <ReportPage
+      title="Superlatives"
+      updated={formatReportStamp(report)}
+      how={`All-Time covers 2022 through this season. Current Season is ${currentSeason} only. Consolation weeks are ignored.`}
+    >
+      <SuperlativesView
+        rows={rows}
+        currentSeason={currentSeason}
+        filters={filters}
+      />
+    </ReportPage>
   );
 }

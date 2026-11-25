@@ -32,6 +32,50 @@ def get_service_client() -> Client:
     return create_client(supabase_url(), key)
 
 
+def fetch_all(client: Client, table: str, columns: str, orders: list[str]) -> list[dict]:
+    rows: list[dict] = []
+    start = 0
+    size = 1000
+    while True:
+        query = client.table(table).select(columns)
+        for column in orders:
+            query = query.order(column)
+        batch = query.range(start, start + size - 1).execute().data or []
+        rows.extend(batch)
+        if len(batch) < size:
+            return rows
+        start += size
+
+
+def delete_season(client: Client, table: str, season: int) -> None:
+    previous = None
+    for _ in range(40):
+        probe = (
+            client.table(table)
+            .select("season", count="exact")
+            .eq("season", season)
+            .limit(1)
+            .execute()
+        )
+        left = probe.count or 0
+        if left == 0:
+            return
+        if previous is not None and left >= previous:
+            raise SystemExit(f"Could not clear {table} for {season} ({left} rows left)")
+        previous = left
+        client.table(table).delete().eq("season", season).execute()
+
+
+def insert_chunks(client: Client, table: str, rows: list[dict]) -> None:
+    for index in range(0, len(rows), 200):
+        client.table(table).insert(rows[index : index + 200]).execute()
+
+
+def upsert_chunks(client: Client, table: str, rows: list[dict], conflict: str) -> None:
+    for index in range(0, len(rows), 200):
+        client.table(table).upsert(rows[index : index + 200], on_conflict=conflict).execute()
+
+
 def upload_logo(client: Client, path: str, data: bytes, content_type: str) -> None:
     bucket = client.storage.from_("logos")
     options = {

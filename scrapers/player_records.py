@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Player win-loss records from ESPN box scores. Writes to Supabase.
+"""Player win-loss records. Writes to Supabase.
 
-Regular season (matchup NONE) and winners-bracket playoffs are stored separately.
-Consolation games do not count toward records, year-by-year starts, or average
-starter points. Use --full to recompute from FIRST_SEASON through the current season.
+The default walks ESPN box scores. --from-weeks rolls records up from stored
+player_weeks and team_weeks instead. That rollup does not match the ESPN table
+yet: playoff weeks are missing opponent_owner, including team-id 0 byes.
+--diff prints the comparison. Consolation games do not count either way.
 """
 
 from __future__ import annotations
@@ -16,19 +17,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from espn_client import FIRST_SEASON, ROOT, get_league, season_id
+from league import owner_name, owners_by_year
 from nfl_teams import WeekTeams, espn_abbrev, load_week_teams
 from revalidate import ping_revalidate
-from supabase_client import get_service_client, upload_logo
+from supabase_client import fetch_all, get_service_client, upload_logo, upsert_chunks
 
 MIN_STARTS = 30
 _OMIT_TEAM = object()
 WINNERS_BRACKET = "WINNERS_BRACKET"
 REGULAR_TYPES = {"NONE", ""}
-
-OWNERS_BY_YEAR = json.loads(
-    (ROOT / "data" / "league.json").read_text(encoding="utf-8")
-).get("owners_by_year") or {}
-
 
 def empty_player(name: str, pos: str) -> dict:
     return {
@@ -96,13 +93,6 @@ def empty_year(year: int) -> dict:
         "gs": 0,
         "starter_pts": 0.0,
     }
-
-
-def owner_name(year: int, team_id: int | None) -> str:
-    if team_id is None:
-        return "Unknown"
-    owners = OWNERS_BY_YEAR.get(str(year)) or {}
-    return owners.get(str(team_id)) or "Unknown"
 
 
 def fantasy_team_name(side) -> str:
@@ -394,16 +384,14 @@ def upsert_players(client, players: dict[str, dict]) -> None:
             }
         )
     try:
-        for i in range(0, len(payload), 200):
-            client.table("player_records").upsert(payload[i : i + 200]).execute()
+        upsert_chunks(client, "player_records", payload, "name")
     except Exception as exc:
         message = str(exc)
         if "seasons" not in message:
             raise
         print("player_records.seasons column missing; upserting without it")
         stripped = [{k: v for k, v in row.items() if k != "seasons"} for row in payload]
-        for i in range(0, len(stripped), 200):
-            client.table("player_records").upsert(stripped[i : i + 200]).execute()
+        upsert_chunks(client, "player_records", stripped, "name")
 
 
 def write_report(client, through: dict, current: int) -> None:
@@ -420,6 +408,313 @@ def write_report(client, through: dict, current: int) -> None:
     ).execute()
 
 
+def _float(value) -> float:
+    return float(value or 0)
+
+
+def champions_by_season() -> dict[int, str]:
+    payouts = json.loads((ROOT / "data" / "payouts.json").read_text(encoding="utf-8"))
+    found: dict[int, str] = {}
+    for year, places in (payouts.get("season_finish") or {}).items():
+        owner = ((places or {}).get("1") or {}).get("owner")
+        if owner:
+            found[int(year)] = str(owner)
+    return found
+
+
+def _pair_games(team_weeks: list[dict]) -> list[dict]:
+    """Non-consolation games with both scores. Each game is counted once."""
+    by_week: dict[tuple[int, int], list[dict]] = {}
+    for row in team_weeks:
+        if row.get("is_consolation"):
+            continue
+        key = (int(row["season"]), int(row["week"]))
+        by_week.setdefault(key, []).append(row)
+    games = []
+    for (season, week), rows in sorted(by_week.items()):
+        by_owner: dict[str, list[dict]] = {}
+        for row in rows:
+            owner = row.get("owner")
+            if owner:
+                by_owner.setdefault(str(owner), []).append(row)
+        seen: set[tuple[int, int]] = set()
+        for row in rows:
+            owner = row.get("owner")
+            opp_name = row.get("opponent_owner")
+            if not owner or not opp_name:
+                continue
+            partner = None
+            for candidate in by_owner.get(str(opp_name), []):
+                if int(candidate["team_id"]) == int(row["team_id"]):
+                    continue
+                if candidate.get("opponent_owner") == owner:
+                    partner = candidate
+                    break
+            if partner is None:
+                continue
+            pair = tuple(sorted((int(row["team_id"]), int(partner["team_id"]))))
+            if pair in seen:
+                continue
+            if bool(row.get("is_regular", True)) != bool(partner.get("is_regular", True)):
+                continue
+            seen.add(pair)
+            left_points = _float(row.get("points"))
+            right_points = _float(partner.get("points"))
+            if left_points > right_points:
+                left_win, right_win = 1, 0
+            elif right_points > left_points:
+                left_win, right_win = 0, 1
+            else:
+                left_win, right_win = 0, 0
+            games.append(
+                {
+                    "season": season,
+                    "week": week,
+                    "playoff": not bool(row.get("is_regular", True)),
+                    "sides": (
+                        {**row, "win": left_win},
+                        {**partner, "win": right_win},
+                    ),
+                }
+            )
+    games.sort(key=lambda game: (game["season"], game["week"], game["sides"][0]["team_id"]))
+    return games
+
+
+def _apply_appearance(
+    players: dict[str, dict],
+    row: dict,
+    team_name: str,
+    win: int,
+    playoff: bool,
+) -> None:
+    name = str(row["name"])
+    rec = players.get(name)
+    if rec is None:
+        rec = empty_player(name, row.get("pos") or "")
+        players[name] = rec
+    if row.get("pos"):
+        rec["pos"] = row["pos"]
+    nfl_team = row.get("nfl_team") or None
+    if nfl_team and (not rec["teams"] or rec["teams"][-1] != nfl_team):
+        rec["teams"].append(nfl_team)
+    season = int(row["season"])
+    seasons = rec.setdefault("seasons", {})
+    acc = seasons.get(season)
+    if acc is None:
+        acc = empty_year(season)
+        seasons[season] = acc
+    owner = owner_name(season, int(row["team_id"]))
+    if owner or team_name:
+        pair = {"owner": owner, "team": team_name}
+        if pair not in acc["fantasy"]:
+            acc["fantasy"].append(pair)
+    if nfl_team and (not acc["nfl"] or acc["nfl"][-1] != nfl_team):
+        acc["nfl"].append(nfl_team)
+    started = bool(row.get("started"))
+    if started:
+        acc["gs"] += 1
+        acc["starter_pts"] += _float(row.get("points"))
+    if playoff:
+        rec["pg"] += 1
+        rec["pw"] += win
+        if started:
+            rec["pgs"] += 1
+            rec["pws"] += win
+        return
+    rec["g"] += 1
+    rec["w"] += win
+    if started:
+        rec["gs"] += 1
+        rec["ws"] += win
+
+
+def _credit_champions(
+    players: dict[str, dict],
+    player_weeks: list[dict],
+    champions: dict[int, str],
+) -> None:
+    blocks = owners_by_year()
+    team_ids: dict[int, set[int]] = {}
+    for season, owner in champions.items():
+        block = blocks.get(str(season)) or {}
+        team_ids[season] = {int(team_id) for team_id, name in block.items() if name == owner}
+    credited: dict[int, set[str]] = {}
+    for row in player_weeks:
+        season = int(row["season"])
+        if int(row["team_id"]) not in team_ids.get(season, set()):
+            continue
+        credited.setdefault(season, set()).add(str(row["name"]))
+    for names in credited.values():
+        for name in names:
+            rec = players.get(name)
+            if rec is None:
+                continue
+            rec["titles"] = int(rec.get("titles") or 0) + 1
+
+
+def rollup_records(
+    player_weeks: list[dict],
+    team_weeks: list[dict],
+    champions: dict[int, str] | None = None,
+) -> dict[str, dict]:
+    """Win-loss from stored weeks. Consolation games are left out."""
+    names = {
+        (int(row["season"]), int(row["week"]), int(row["team_id"])): row.get("team_name") or ""
+        for row in team_weeks
+    }
+    lineup: dict[tuple[int, int, int], list[dict]] = {}
+    for row in player_weeks:
+        key = (int(row["season"]), int(row["week"]), int(row["team_id"]))
+        lineup.setdefault(key, []).append(row)
+    players: dict[str, dict] = {}
+    for game in _pair_games(team_weeks):
+        for side in game["sides"]:
+            key = (game["season"], game["week"], int(side["team_id"]))
+            team_name = names.get(key) or ""
+            for row in lineup.get(key, []):
+                _apply_appearance(players, row, team_name, int(side["win"]), game["playoff"])
+    _credit_champions(players, player_weeks, champions if champions is not None else champions_by_season())
+    return players
+
+
+def _stat_key(rec: dict) -> tuple:
+    return (
+        int(rec["g"]),
+        int(rec["w"]),
+        int(rec["gs"]),
+        int(rec["ws"]),
+        int(rec["pg"]),
+        int(rec["pw"]),
+        int(rec["pgs"]),
+        int(rec["pws"]),
+        int(rec["titles"]),
+    )
+
+
+def _season_starts(rec: dict) -> dict[int, int]:
+    seasons = rec.get("seasons") or {}
+    if isinstance(seasons, dict):
+        return {int(year): int(acc.get("gs") or 0) for year, acc in seasons.items() if int(acc.get("gs") or 0)}
+    return {}
+
+
+def compare_records(stored: dict[str, dict], rolled: dict[str, dict]) -> list[str]:
+    """Differences in wins, losses, starts, and titles."""
+    mismatches = []
+    for name in sorted(set(stored) | set(rolled)):
+        left = stored.get(name)
+        right = rolled.get(name)
+        if left is None or right is None:
+            mismatches.append(f"{name}: only in {'stored' if right is None else 'rollup'}")
+            continue
+        if _stat_key(left) != _stat_key(right):
+            mismatches.append(f"{name}: stored {_stat_key(left)} rollup {_stat_key(right)}")
+            continue
+        if _season_starts(left) != _season_starts(right):
+            mismatches.append(f"{name}: season starts stored {_season_starts(left)} rollup {_season_starts(right)}")
+    return mismatches
+
+
+def _column_ready(client, table: str, column: str) -> bool:
+    try:
+        client.table(table).select(column).limit(1).execute()
+    except Exception:
+        return False
+    return True
+
+
+def load_stored_weeks(client) -> tuple[list[dict], list[dict]]:
+    if not _column_ready(client, "team_weeks", "opponent_owner"):
+        raise SystemExit(
+            "team_weeks.opponent_owner is missing. Apply the opponent migration before a records rollup."
+        )
+    team_columns = "season, week, team_id, owner, team_name, points, is_regular, opponent_owner"
+    if _column_ready(client, "team_weeks", "is_consolation"):
+        team_columns += ", is_consolation"
+    player_weeks = fetch_all(
+        client,
+        "player_weeks",
+        "season, week, player_id, name, pos, nfl_team, team_id, owner, started, points",
+        ["season", "week", "player_id"],
+    )
+    team_weeks = fetch_all(
+        client,
+        "team_weeks",
+        team_columns,
+        ["season", "week", "team_id"],
+    )
+    return player_weeks, team_weeks
+
+
+def records_self_test() -> None:
+    players = rollup_records(
+        [
+            {"season": 2024, "week": 1, "player_id": 1, "name": "Alpha", "pos": "WR", "nfl_team": "SF", "team_id": 1, "started": True, "points": 20},
+            {"season": 2024, "week": 1, "player_id": 2, "name": "Bench", "pos": "RB", "nfl_team": "DAL", "team_id": 1, "started": False, "points": 0},
+            {"season": 2024, "week": 1, "player_id": 3, "name": "Gamma", "pos": "QB", "nfl_team": "BUF", "team_id": 2, "started": True, "points": 10},
+            {"season": 2024, "week": 2, "player_id": 1, "name": "Alpha", "pos": "WR", "nfl_team": "SF", "team_id": 1, "started": True, "points": 15},
+            {"season": 2024, "week": 3, "player_id": 4, "name": "OnlyConsolation", "pos": "TE", "nfl_team": "KC", "team_id": 1, "started": True, "points": 8},
+        ],
+        [
+            {"season": 2024, "week": 1, "team_id": 1, "owner": "Noah", "team_name": "Noah", "points": 100, "is_regular": True, "opponent_owner": "Liam", "is_consolation": False},
+            {"season": 2024, "week": 1, "team_id": 2, "owner": "Liam", "team_name": "Liam", "points": 90, "is_regular": True, "opponent_owner": "Noah", "is_consolation": False},
+            {"season": 2024, "week": 2, "team_id": 1, "owner": "Noah", "team_name": "Noah", "points": 80, "is_regular": False, "opponent_owner": "Liam", "is_consolation": False},
+            {"season": 2024, "week": 2, "team_id": 2, "owner": "Liam", "team_name": "Liam", "points": 110, "is_regular": False, "opponent_owner": "Noah", "is_consolation": False},
+            {"season": 2024, "week": 3, "team_id": 1, "owner": "Noah", "team_name": "Noah", "points": 50, "is_regular": False, "opponent_owner": "Liam", "is_consolation": True},
+            {"season": 2024, "week": 3, "team_id": 2, "owner": "Liam", "team_name": "Liam", "points": 40, "is_regular": False, "opponent_owner": "Noah", "is_consolation": True},
+        ],
+        {2024: "Noah"},
+    )
+    alpha = players["Alpha"]
+    assert (alpha["g"], alpha["w"], alpha["gs"], alpha["ws"]) == (1, 1, 1, 1)
+    assert (alpha["pg"], alpha["pw"], alpha["pgs"], alpha["pws"]) == (1, 0, 1, 0)
+    assert alpha["titles"] == 1
+    assert players["Bench"]["g"] == 1 and players["Bench"]["gs"] == 0 and players["Bench"]["titles"] == 1
+    assert players["Gamma"]["w"] == 0 and players["Gamma"]["titles"] == 0
+    assert "OnlyConsolation" not in players
+    assert players["Alpha"]["seasons"][2024]["gs"] == 2
+    print("records rollup ok")
+
+
+def run_from_weeks(client, current: int) -> None:
+    player_weeks, team_weeks = load_stored_weeks(client)
+    if not player_weeks or not team_weeks:
+        raise SystemExit("No stored weeks. Run the superlatives ingest, or pass --espn.")
+    players = rollup_records(player_weeks, team_weeks)
+    if not players:
+        raise SystemExit("Records rollup produced no players. Pass --espn to walk box scores.")
+    print(f"Rolled up {len(players)} players from {len(player_weeks)} player-weeks")
+    client.table("player_records").delete().neq("name", "").execute()
+    write_seasons_storage(client, players)
+    upsert_players(client, players)
+    current_weeks = [int(row["week"]) for row in team_weeks if int(row["season"]) == current and not row.get("is_consolation")]
+    champions = [year for year in champions_by_season() if year <= current]
+    through = {
+        "season": current,
+        "week": max(current_weeks) if current_weeks else 0,
+        "titles_through_season": max(champions) if champions else FIRST_SEASON - 1,
+    }
+    write_report(client, through, current)
+    ping_revalidate()
+    print(f"Wrote {len(players)} player records")
+
+
+def run_diff(client) -> None:
+    player_weeks, team_weeks = load_stored_weeks(client)
+    stored, _through = load_from_db(client)
+    rolled = rollup_records(player_weeks, team_weeks)
+    mismatches = compare_records(stored, rolled)
+    print(f"Stored {len(stored)} players, rollup {len(rolled)} players, mismatches {len(mismatches)}")
+    for line in mismatches[:40]:
+        print(f"  {line}")
+    if len(mismatches) > 40:
+        print(f"  … {len(mismatches) - 40} more")
+    if mismatches:
+        raise SystemExit(1)
+    print("Records rollup matches stored wins, losses, starts, and titles")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -427,13 +722,29 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help=f"Recompute every season from {FIRST_SEASON} through the current year.",
     )
+    parser.add_argument(
+        "--from-weeks",
+        action="store_true",
+        help="Roll records up from stored weeks. Left off the schedule until --diff is empty.",
+    )
+    parser.add_argument("--diff", action="store_true", help="Compare the week rollup to stored player_records and exit.")
+    parser.add_argument("--self-test", action="store_true", help="Run the rollup checks and exit.")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.self_test:
+        records_self_test()
+        return
     current = season_id()
     client = get_service_client()
+    if args.diff:
+        run_diff(client)
+        return
+    if args.from_weeks:
+        run_from_weeks(client, current)
+        return
     print("NFL teams")
     week_teams = load_week_teams(list(range(FIRST_SEASON, current + 1)))
 

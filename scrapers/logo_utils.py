@@ -10,11 +10,8 @@ import requests
 from PIL import Image
 
 from espn_client import ROOT, require_cookies
+from league import owner_for
 from supabase_client import upload_logo
-
-OWNERS_BY_YEAR = json.loads(
-    (ROOT / "data" / "league.json").read_text(encoding="utf-8")
-).get("owners_by_year") or {}
 
 LOCAL_FALLBACK_DIR = ROOT / "data" / "logo-fallbacks"
 DESKTOP_LOGO_HISTORY = Path(
@@ -35,13 +32,6 @@ REQUEST_HEADERS = {
     "Referer": "https://fantasy.espn.com/",
     "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
 }
-
-
-def owner_for(year: int, team_id: int) -> str | None:
-    name = OWNERS_BY_YEAR.get(str(year), {}).get(str(team_id))
-    if not name or name == "N/A":
-        return None
-    return name
 
 
 def logo_dest(season: int, team_id: int, ext: str) -> str:

@@ -8,6 +8,9 @@ import requests
 
 
 def ping_revalidate() -> None:
+    if os.environ.get("SCRAPE_REVALIDATE") == "0":
+        print("Skipping revalidate (SCRAPE_REVALIDATE=0)")
+        return
     url = os.environ.get("VERCEL_REVALIDATE_URL")
     secret = os.environ.get("REVALIDATE_SECRET")
     if not url or not secret:

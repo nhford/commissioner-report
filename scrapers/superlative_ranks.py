@@ -4,9 +4,17 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date, datetime
+from datetime import datetime
 from itertools import combinations
 from pathlib import Path
+
+from league import (
+    first_season as _first_season,
+    league_owner_names,
+    opening_thursday,
+    owner_for_team,
+    owners_between,
+)
 
 PAYOUT_START = 2024
 # Week-level median and payout awards start here. Team-week highs and lows do not.
@@ -115,82 +123,21 @@ def year_windows(current_season: int) -> list[str]:
     return windows
 
 
-def _league_file() -> dict:
-    path = Path(__file__).resolve().parent.parent / "data" / "league.json"
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _first_season() -> int:
-    years = [int(year) for year in _league_file().get("owners_by_year", {})]
-    return min(years) if years else 2022
-
-
-def league_owner_names() -> list[str]:
-    names: set[str] = set()
-    for block in _league_file().get("owners_by_year", {}).values():
-        for name in block.values():
-            if name and name != "N/A":
-                names.add(str(name))
-    return sorted(names)
-
-
 def owners_in_scope(scope: str) -> list[str]:
     """Owners who held a team during this window. all_time includes every season."""
     bounds = scope_bounds(scope)
-    names: set[str] = set()
-    for year, block in _league_file().get("owners_by_year", {}).items():
-        season = int(year)
-        if bounds is not None and not (bounds[0] <= season <= bounds[1]):
-            continue
-        for name in (block or {}).values():
-            if name and name != "N/A":
-                names.add(str(name))
-    return sorted(names)
+    if bounds is None:
+        return league_owner_names()
+    return owners_between(bounds[0], bounds[1])
 
 
-# Show-all boards. An owner with no result still gets a zero row.
-ZERO_OWNER_DISPLAY = {
-    "total_earnings": "$0",
-    "payout_wins": "0 weeks",
-    "payout_runner_up": "0 weeks",
-    "most_trades": "0 trades",
-    "anti_projection_starts": "0 starts",
-    "projection_beater": "0.0%",
-    "lineup_efficiency": "0.0%",
-    "faab_precision": "0.0% · $0 of $0",
-    "faab_win_pct": "0.0% · 0 of 0",
-}
-
-
-# Awards sliced from the league list. Other one-owner boards are ranked again.
-OWNER_AWARDS = {
-    "lowest_start",
-    "highest_start",
-    "lowest_team_week",
-    "highest_team_week",
-    "lowest_three_week",
-    "highest_three_week",
-    "payout_wins",
-    "payout_runner_up",
-    "total_earnings",
-    "median_streak",
-    "median_misses",
-    "most_trades",
-    "projection_beater",
-    "lineup_efficiency",
-    "anti_projection_starts",
-    "team_duo_trades",
-    "closest_matchup",
-    "faab_precision",
-    "faab_win_pct",
-}
-
-HIDDEN_ON_OWNER = {
-    "least_fantasy_teams",
-    "highest_median",
-    "lowest_median",
-    "lowest_payout",
-}
+# Award id sets shared with lib/superlatives.ts. Hint copy stays in TypeScript.
+_AWARD_CATALOG = json.loads(
+    (Path(__file__).resolve().parent.parent / "data" / "awards.json").read_text(encoding="utf-8")
+)
+ZERO_OWNER_DISPLAY = _AWARD_CATALOG["zeroOwnerDisplay"]
+OWNER_AWARDS = set(_AWARD_CATALOG["ownerAwards"])
+HIDDEN_ON_OWNER = set(_AWARD_CATALOG["hiddenOnOwner"])
 
 
 def _for_owner(category: str, items: list[dict], owner: str) -> list[dict] | None:
@@ -209,13 +156,6 @@ def _for_owner(category: str, items: list[dict], owner: str) -> list[dict] | Non
     if category in {"lowest_start", "highest_start"}:
         return [item for item in items if (item.get("detail") or {}).get("owner") == owner]
     return [item for item in items if item.get("subject_name") == owner]
-
-
-def owner_for_team(season: int, team_id: int | None) -> str | None:
-    if team_id is None:
-        return None
-    block = _league_file().get("owners_by_year", {}).get(str(int(season)), {})
-    return usable_owner(block.get(str(int(team_id))))
 
 
 def _present_for_owner(category: str, item: dict) -> dict:
@@ -2038,246 +1978,145 @@ def build_superlatives(
     owners = league_owner_names() if with_owners else []
     defenses = defense_totals(player_weeks)
     rows: list[dict] = []
+    bids = waiver_bids or []
+    agents = free_agents or []
     for scope in year_windows(current_season):
-        _store(
-            rows,
-            scope,
-            owners,
+
+        def put(category: str, items: list[dict], per_owner=None) -> None:
+            _store(rows, scope, owners, category, items, per_owner)
+
+        def each(fn):
+            return lambda owner, fn=fn, window=scope: fn(window, owner)
+
+        put(
             "most_fantasy_teams",
             most_fantasy_teams(player_weeks, scope),
-            lambda owner, window=scope: owner_roster_years(player_weeks, window, owner),
+            each(lambda window, owner: owner_roster_years(player_weeks, window, owner)),
         )
-        _store(
-            rows,
-            scope,
-            owners,
-            "least_fantasy_teams",
-            least_fantasy_teams(free_agents or [], player_weeks, draft_picks, scope),
-        )
-        _store(rows, scope, owners, "lowest_start", lowest_starts(player_weeks, scope))
-        _store(rows, scope, owners, "highest_start", highest_starts(player_weeks, scope))
-        _store(
-            rows,
-            scope,
-            owners,
+        put("least_fantasy_teams", least_fantasy_teams(agents, player_weeks, draft_picks, scope))
+        put("lowest_start", lowest_starts(player_weeks, scope))
+        put("highest_start", highest_starts(player_weeks, scope))
+        put(
             "most_auction_dollars",
             auction_totals(draft_picks, scope, latest),
-            lambda owner, window=scope: auction_totals(draft_picks, window, latest, owner),
+            each(lambda window, owner: auction_totals(draft_picks, window, latest, owner)),
         )
-        _store(
-            rows,
-            scope,
-            owners,
-            "most_added",
-            movement_leaders(events, latest, scope, "add", "adds"),
-            lambda owner, window=scope: movement_leaders(events, latest, window, "add", "adds", owner),
-        )
-        _store(
-            rows,
-            scope,
-            owners,
-            "most_dropped",
-            movement_leaders(events, latest, scope, "drop", "drops"),
-            lambda owner, window=scope: movement_leaders(events, latest, window, "drop", "drops", owner),
-        )
-        _store(
-            rows,
-            scope,
-            owners,
-            "most_traded_player",
-            movement_leaders(events, latest, scope, "trade", "trades"),
-            lambda owner, window=scope: movement_leaders(events, latest, window, "trade", "trades", owner),
-        )
-        for category, lowest in (("lowest_team_week", True), ("highest_team_week", False)):
+        for kind, noun, category in (
+            ("add", "adds", "most_added"),
+            ("drop", "drops", "most_dropped"),
+            ("trade", "trades", "most_traded_player"),
+        ):
+            put(
+                category,
+                movement_leaders(events, latest, scope, kind, noun),
+                each(
+                    lambda window, owner, kind=kind, noun=noun: movement_leaders(
+                        events, latest, window, kind, noun, owner
+                    )
+                ),
+            )
+        for category, lowest, rank_fn in (
+            ("lowest_team_week", True, team_week_extremes),
+            ("highest_team_week", False, team_week_extremes),
+            ("lowest_three_week", True, team_week_stretches),
+            ("highest_three_week", False, team_week_stretches),
+        ):
             _store_team_weeks(
                 rows,
                 scope,
                 owners,
                 category,
-                {
-                    "default": team_week_extremes(
-                        team_weeks, scope, logos, current_season, lowest, defenses, True, True
-                    ),
-                    "full_scores": team_week_extremes(
-                        team_weeks, scope, logos, current_season, lowest, defenses, False, True
-                    ),
-                    "with_consolation": team_week_extremes(
-                        team_weeks, scope, logos, current_season, lowest, defenses, True, False
-                    ),
-                    "full_with_consolation": team_week_extremes(
-                        team_weeks, scope, logos, current_season, lowest, defenses, False, False
-                    ),
-                },
+                _board_variants(
+                    lambda drop_dst, drop_consolation, lowest=lowest, rank_fn=rank_fn: rank_fn(
+                        team_weeks,
+                        scope,
+                        logos,
+                        current_season,
+                        lowest,
+                        defenses,
+                        drop_dst,
+                        drop_consolation,
+                    )
+                ),
             )
-        for category, lowest in (("lowest_three_week", True), ("highest_three_week", False)):
-            _store_team_weeks(
-                rows,
-                scope,
-                owners,
-                category,
-                {
-                    "default": team_week_stretches(
-                        team_weeks, scope, logos, current_season, lowest, defenses, True, True
-                    ),
-                    "full_scores": team_week_stretches(
-                        team_weeks, scope, logos, current_season, lowest, defenses, False, True
-                    ),
-                    "with_consolation": team_week_stretches(
-                        team_weeks, scope, logos, current_season, lowest, defenses, True, False
-                    ),
-                    "full_with_consolation": team_week_stretches(
-                        team_weeks, scope, logos, current_season, lowest, defenses, False, False
-                    ),
-                },
-            )
-        _store(
-            rows,
-            scope,
-            owners,
-            "closest_matchup",
-            closest_matchups(team_weeks, scope, logos, current_season),
-        )
-        _store(rows, scope, owners, "highest_median", median_weeks(team_weeks, scope, logos, current_season, True))
-        _store(rows, scope, owners, "lowest_median", median_weeks(team_weeks, scope, logos, current_season, False))
-        _store(
-            rows,
-            scope,
-            owners,
+        put("closest_matchup", closest_matchups(team_weeks, scope, logos, current_season))
+        put("highest_median", median_weeks(team_weeks, scope, logos, current_season, True))
+        put("lowest_median", median_weeks(team_weeks, scope, logos, current_season, False))
+        put(
             "player_duo_starts",
             player_duos(player_weeks, scope),
-            lambda owner, window=scope: player_duos(player_weeks, window, owner),
+            each(lambda window, owner: player_duos(player_weeks, window, owner)),
         )
-        _store(
-            rows,
-            scope,
-            owners,
-            "projection_over_streak",
-            projection_streaks(player_weeks, scope, True),
-            lambda owner, window=scope: projection_streaks(player_weeks, window, True, owner),
-        )
-        _store(
-            rows,
-            scope,
-            owners,
-            "projection_under_streak",
-            projection_streaks(player_weeks, scope, False),
-            lambda owner, window=scope: projection_streaks(player_weeks, window, False, owner),
-        )
-        _store(
-            rows,
-            scope,
-            owners,
-            "projection_over_season",
-            projection_surplus(player_weeks, scope, True),
-            lambda owner, window=scope: projection_surplus(player_weeks, window, True, owner),
-        )
-        _store(
-            rows,
-            scope,
-            owners,
-            "projection_under_season",
-            projection_surplus(player_weeks, scope, False),
-            lambda owner, window=scope: projection_surplus(player_weeks, window, False, owner),
-        )
-        _store(rows, scope, owners, "payout_wins", payout_wins(team_weeks, scope, logos, current_season))
-        _store(
-            rows,
-            scope,
-            owners,
-            "payout_runner_up",
-            payout_runner_up(team_weeks, scope, logos, current_season),
-        )
-        _store(rows, scope, owners, "lowest_payout", lowest_payout_weeks(team_weeks, scope, logos, current_season))
-        _store(
-            rows,
-            scope,
-            owners,
+        for over, streak_id, surplus_id in (
+            (True, "projection_over_streak", "projection_over_season"),
+            (False, "projection_under_streak", "projection_under_season"),
+        ):
+            put(
+                streak_id,
+                projection_streaks(player_weeks, scope, over),
+                each(lambda window, owner, over=over: projection_streaks(player_weeks, window, over, owner)),
+            )
+            put(
+                surplus_id,
+                projection_surplus(player_weeks, scope, over),
+                each(lambda window, owner, over=over: projection_surplus(player_weeks, window, over, owner)),
+            )
+        put("payout_wins", payout_wins(team_weeks, scope, logos, current_season))
+        put("payout_runner_up", payout_runner_up(team_weeks, scope, logos, current_season))
+        put("lowest_payout", lowest_payout_weeks(team_weeks, scope, logos, current_season))
+        put(
             "total_earnings",
             total_earnings(team_weeks, payouts, finishers, scope, logos, current_season),
         )
-        _store(rows, scope, owners, "median_streak", streaks(team_weeks, scope, logos, current_season, True))
-        _store(rows, scope, owners, "median_misses", streaks(team_weeks, scope, logos, current_season, False))
-        _store(rows, scope, owners, "team_duo_trades", team_duo_trades(trades, scope, logos, current_season))
-        _store(rows, scope, owners, "most_trades", most_trades(trades, scope, logos, current_season))
-        _store(
-            rows,
-            scope,
-            owners,
-            "projection_beater",
-            rate_award(
-                team_weeks,
-                scope,
-                logos,
-                current_season,
-                "starter_points",
-                "projection_lineup_points",
-                True,
-            ),
-        )
-        _store(
-            rows,
-            scope,
-            owners,
-            "lineup_efficiency",
-            rate_award(
-                team_weeks,
-                scope,
-                logos,
-                current_season,
-                "starter_points",
-                "optimal_points",
-                False,
-            ),
-        )
-        _store(
-            rows,
-            scope,
-            owners,
-            "anti_projection_starts",
-            anti_projection(team_weeks, scope, logos, current_season),
-        )
-        _store(
-            rows,
-            scope,
-            owners,
+        put("median_streak", streaks(team_weeks, scope, logos, current_season, True))
+        put("median_misses", streaks(team_weeks, scope, logos, current_season, False))
+        put("team_duo_trades", team_duo_trades(trades, scope, logos, current_season))
+        put("most_trades", most_trades(trades, scope, logos, current_season))
+        for category, numerator, denominator, projections in (
+            ("projection_beater", "starter_points", "projection_lineup_points", True),
+            ("lineup_efficiency", "starter_points", "optimal_points", False),
+        ):
+            put(
+                category,
+                rate_award(
+                    team_weeks,
+                    scope,
+                    logos,
+                    current_season,
+                    numerator,
+                    denominator,
+                    projections,
+                ),
+            )
+        put("anti_projection_starts", anti_projection(team_weeks, scope, logos, current_season))
+        put(
             "nfl_starter_week",
             nfl_starter_weeks(player_weeks, scope),
-            lambda owner, window=scope: nfl_starter_weeks(player_weeks, window, owner),
+            each(lambda window, owner: nfl_starter_weeks(player_weeks, window, owner)),
         )
-        _store(
-            rows,
-            scope,
-            owners,
-            "faab_precision",
-            faab_precision(waiver_bids or [], scope, logos, current_season),
-        )
-        _store(
-            rows,
-            scope,
-            owners,
-            "faab_win_pct",
-            faab_win_pct(waiver_bids or [], scope, logos, current_season),
-        )
+        put("faab_precision", faab_precision(bids, scope, logos, current_season))
+        put("faab_win_pct", faab_win_pct(bids, scope, logos, current_season))
     return rows
 
 
-# Thursday of NFL week 1. Activity before that Thursday still belongs to week 1.
-_WEEK1_THURSDAY = {
-    2022: date(2022, 9, 8),
-    2023: date(2023, 9, 7),
-    2024: date(2024, 9, 5),
-    2025: date(2025, 9, 4),
-    2026: date(2026, 9, 10),
-}
+def _board_variants(build) -> dict[str, list[dict]]:
+    """The four team-week boards: defense dropped, consolation dropped, neither, both."""
+    return {
+        "default": build(True, True),
+        "full_scores": build(False, True),
+        "with_consolation": build(True, False),
+        "full_with_consolation": build(False, False),
+    }
+
+
 _DEFENSE_NAME = re.compile(r"\bD/ST\b")
 
 
 def activity_scoring_week(occurred_at: str, season: int) -> int:
+    """Thursday of NFL week 1. Activity before that Thursday still belongs to week 1."""
     text = occurred_at.replace("Z", "+00:00")
     moment = datetime.fromisoformat(text)
-    start = _WEEK1_THURSDAY.get(int(season))
-    if start is None:
-        return 1
+    start = opening_thursday(int(season))
     day = moment.date()
     if day < start:
         return 1

@@ -1,0 +1,51 @@
+{
+  "zeroOwnerDisplay": {
+    "total_earnings": "$0",
+    "payout_wins": "0 weeks",
+    "payout_runner_up": "0 weeks",
+    "most_trades": "0 trades",
+    "anti_projection_starts": "0 starts",
+    "projection_beater": "0.0%",
+    "lineup_efficiency": "0.0%",
+    "faab_precision": "0.0% · $0 of $0",
+    "faab_win_pct": "0.0% · 0 of 0"
+  },
+  "ownerAwards": [
+    "lowest_start",
+    "highest_start",
+    "lowest_team_week",
+    "highest_team_week",
+    "lowest_three_week",
+    "highest_three_week",
+    "payout_wins",
+    "payout_runner_up",
+    "total_earnings",
+    "median_streak",
+    "median_misses",
+    "most_trades",
+    "projection_beater",
+    "lineup_efficiency",
+    "anti_projection_starts",
+    "team_duo_trades",
+    "closest_matchup",
+    "faab_precision",
+    "faab_win_pct"
+  ],
+  "hiddenOnOwner": [
+    "least_fantasy_teams",
+    "highest_median",
+    "lowest_median",
+    "lowest_payout"
+  ],
+  "oneOwnerAwards": [
+    "total_earnings",
+    "payout_wins",
+    "payout_runner_up",
+    "most_trades",
+    "projection_beater",
+    "lineup_efficiency",
+    "anti_projection_starts",
+    "faab_precision",
+    "faab_win_pct"
+  ]
+}
