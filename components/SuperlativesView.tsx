@@ -234,9 +234,15 @@ export default function SuperlativesView({
               Current Season
             </a>
           </div>
-          <FilterToggle name="latest" label="Sort by Latest" checked={filters.sortLatest} />
         </div>
-        <SortModeToggle checked={filters.sortLatest} />
+        <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-1">
+          <SortModeToggle checked={filters.sortLatest} />
+          {filters.sortLatest ? (
+            <p className="text-xs leading-4 text-white/60">
+              Most recently changed awards first
+            </p>
+          ) : null}
+        </div>
 
         <details className="max-w-xl" open={advancedOpen || undefined}>
           <summary className="min-h-9 cursor-pointer text-sm text-white/80 underline decoration-white/30 underline-offset-2">
