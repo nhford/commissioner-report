@@ -6,18 +6,14 @@ import { formatUpdated } from "@/lib/format";
 export const revalidate = 3600;
 
 export default async function Home() {
-  const [median, players, superlatives, ogami] = await Promise.all([
-    getReport("median-monday"),
-    getReport("player-records"),
-    getReport("superlatives"),
-    getReport("trade-o-gami"),
-  ]);
-  const updated: Record<string, string | null> = {
-    "/median-monday": formatUpdated(median?.last_updated),
-    "/player-records": formatUpdated(players?.last_updated),
-    "/superlatives": formatUpdated(superlatives?.last_updated),
-    "/o-gami": formatUpdated(ogami?.last_updated),
-  };
+  const stamped = HUB_CARDS.filter((card) => card.reportId);
+  const reports = await Promise.all(
+    stamped.map((card) => getReport(card.reportId as string)),
+  );
+  const updated: Record<string, string | null> = {};
+  stamped.forEach((card, index) => {
+    updated[card.href] = formatUpdated(reports[index]?.last_updated);
+  });
 
   return (
     <div>

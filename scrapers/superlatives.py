@@ -47,7 +47,14 @@ from superlative_ranks import (
     self_test,
     usable_owner,
 )
-from supabase_client import get_service_client, upload_logo
+from supabase_client import (
+    delete_season,
+    fetch_all,
+    get_service_client,
+    insert_chunks,
+    upload_logo,
+    upsert_chunks,
+)
 from waiver_bids import fetch_waiver_bids
 from waiver_bids import self_test as waiver_self_test
 
@@ -310,45 +317,6 @@ def load_finishers(payouts: dict) -> dict[int, dict[int, str]]:
     return finishers
 
 
-def fetch_all(client, table: str, columns: str, orders: list[str]) -> list[dict]:
-    rows: list[dict] = []
-    start = 0
-    size = 1000
-    while True:
-        query = client.table(table).select(columns)
-        for column in orders:
-            query = query.order(column)
-        batch = query.range(start, start + size - 1).execute().data or []
-        rows.extend(batch)
-        if len(batch) < size:
-            return rows
-        start += size
-
-
-def delete_season(client, table: str, season: int) -> None:
-    previous = None
-    for _ in range(40):
-        probe = (
-            client.table(table)
-            .select("season", count="exact")
-            .eq("season", season)
-            .limit(1)
-            .execute()
-        )
-        left = probe.count or 0
-        if left == 0:
-            return
-        if previous is not None and left >= previous:
-            raise SystemExit(f"Could not clear {table} for {season} ({left} rows left)")
-        previous = left
-        client.table(table).delete().eq("season", season).execute()
-
-
-def insert_chunks(client, table: str, rows: list[dict]) -> None:
-    for index in range(0, len(rows), 200):
-        client.table(table).insert(rows[index : index + 200]).execute()
-
-
 def rostered_ids(player_rows: list[dict], draft_rows: list[dict]) -> set[int]:
     ids = {int(row["player_id"]) for row in player_rows}
     ids.update(int(row["player_id"]) for row in draft_rows)
@@ -444,11 +412,6 @@ def write_season(client, year: int, player_rows: list[dict], team_rows: list[dic
         print(f"  {year}: no draft picks returned; leaving stored picks in place")
 
 
-def _upsert_batches(client, table: str, rows: list[dict], conflict: str) -> None:
-    for start in range(0, len(rows), 200):
-        client.table(table).upsert(rows[start : start + 200], on_conflict=conflict).execute()
-
-
 def persist_week_teams(client, changes: list[tuple[dict, str | None, str]]) -> None:
     payload = []
     for row, old, new in changes:
@@ -468,7 +431,7 @@ def persist_week_teams(client, changes: list[tuple[dict, str | None, str]]) -> N
                 "projected_points": row.get("projected_points"),
             }
         )
-    _upsert_batches(client, "player_weeks", payload, "season,week,player_id")
+    upsert_chunks(client, "player_weeks", payload, "season,week,player_id")
 
 
 def persist_season_teams(client, changes: list[tuple[dict, str | None, str]]) -> None:
@@ -485,7 +448,7 @@ def persist_season_teams(client, changes: list[tuple[dict, str | None, str]]) ->
                 "points": row.get("points") or 0,
             }
         )
-    _upsert_batches(client, "free_agent_seasons", payload, "season,player_id")
+    upsert_chunks(client, "free_agent_seasons", payload, "season,player_id")
 
 
 def write_free_agents(client, year: int, rows: list[dict]) -> None:
@@ -713,6 +676,16 @@ def replace_rankings(client, rows: list[dict]) -> None:
     insert_chunks(client, "superlatives", rows)
 
 
+def stored_through_week(client, fallback: int) -> int:
+    existing = (
+        client.table("reports").select("through_week").eq("id", "superlatives").execute().data
+        or []
+    )
+    if not existing or existing[0].get("through_week") is None:
+        return fallback
+    return int(existing[0]["through_week"])
+
+
 def write_report(client, current: int, through_week: int) -> None:
     client.table("reports").upsert(
         {
@@ -739,6 +712,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Rebuild rankings from stored weeks without calling ESPN.",
     )
+    parser.add_argument(
+        "--ingest-only",
+        action="store_true",
+        help="Write weeks, waivers, and activity, then stop before rankings.",
+    )
     return parser.parse_args()
 
 
@@ -749,6 +727,8 @@ def main() -> None:
         waiver_self_test()
         nfl_team_self_test()
         return
+    if args.ingest_only and args.ranks_only:
+        raise SystemExit("Use either --ingest-only or --ranks-only.")
 
     current = season_id()
     years = (
@@ -813,12 +793,18 @@ def main() -> None:
         write_free_agents(client, year, free_rows)
         write_waiver_bids(client, year, waiver_rows)
 
-    print("Rankings")
     if not args.ranks_only:
         activity_league = get_league(current)
         topics = fetch_all_topics(activity_league)
         activity_rows = [row for topic in topics if (row := row_from_topic(activity_league, topic))]
         write_activity(client, activity_league, activity_rows)
+    if args.ingest_only:
+        write_report(client, current, through_week)
+        ping_revalidate()
+        print("Ingest finished")
+        return
+
+    print("Rankings")
     finishers = load_finishers(payouts)
     logos = load_logos(client)
     player_weeks = [
@@ -914,8 +900,9 @@ def main() -> None:
     )
     apply_photos(rows, ensure_photos(client, photo_targets(rows)))
     replace_rankings(client, rows)
-    if not args.ranks_only:
-        write_report(client, current, through_week)
+    if args.ranks_only:
+        through_week = stored_through_week(client, through_week)
+    write_report(client, current, through_week)
     ping_revalidate()
     print(f"Wrote {len(rows)} superlative rows")
 
