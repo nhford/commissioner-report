@@ -235,10 +235,10 @@ export default function SuperlativesView({
             </a>
           </div>
         </div>
-        <div>
+        <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-1">
           <SortModeToggle checked={filters.sortLatest} />
           {filters.sortLatest ? (
-            <p className="mt-1 pl-11 text-xs leading-4 text-white/60">
+            <p className="text-xs leading-4 text-white/60">
               Most recently changed awards first
             </p>
           ) : null}
