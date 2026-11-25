@@ -212,8 +212,8 @@ export default function SuperlativesView({
               Current Season
             </a>
           </div>
-          <FilterToggle name="latest" label="Sort by Latest" checked={filters.sortLatest} />
         </div>
+        <FilterToggle name="latest" label="Sort by Latest" checked={filters.sortLatest} />
 
         <details className="max-w-xl" open={advancedOpen || undefined}>
           <summary className="min-h-9 cursor-pointer text-sm text-white/80 underline decoration-white/30 underline-offset-2">
